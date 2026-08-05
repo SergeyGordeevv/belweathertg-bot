@@ -7,23 +7,32 @@ from flask import Flask
 from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# === ТВОИ ДАННЫЕ ===
-BOT_TOKEN = "8896032923:AAG2iABXbLJOW9PEhnBluChgf60IoWeZvPk"
+# === ТОКЕН БЕРЁТСЯ ИЗ ПЕРЕМЕННОЙ ОКРУЖЕНИЯ ===
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
-CHAT_ID = -1003811989111
+CHAT_ID = -1003811989111  # ID группы
 
+if not BOT_TOKEN:
+    raise ValueError("Не задан BOT_TOKEN! Добавь его в переменные окружения Render.")
 if not WEATHER_API_KEY:
     raise ValueError("Не задан WEATHER_API_KEY! Добавь его в переменные окружения Render.")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
+# === ФУНКЦИЯ НОРМАЛИЗАЦИИ НАЗВАНИЯ ГОРОДА ===
+def normalize_city(city):
+    """Приводит название города к виду, понятному OpenWeatherMap"""
+    city_lower = city.lower()
+    # Логойск может быть написан по-разному
+    if city_lower in ["логойск", "logoysk", "lahojsk", "logojsk"]:
+        return "Lahoysk"  # именно с 'y' — рабочий вариант
+    # Остальные города можно оставить как есть (Brest, Minsk и т.д.)
+    return city
+
 # === ФУНКЦИИ ПОГОДЫ ===
 def get_weather(city):
-    # Если город "Логойск" — подставляем правильное латинское название
-    if city.lower() == "логойск":
-        city = "Lahojsk,BY"
-    
+    city = normalize_city(city)
     url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -40,9 +49,7 @@ def get_weather(city):
         return None
 
 def get_forecast(city, days=1):
-    if city.lower() == "логойск":
-        city = "Lahojsk,BY"
-    
+    city = normalize_city(city)
     url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -60,9 +67,7 @@ def get_forecast(city, days=1):
         return None
 
 def get_daily_forecast(city, days=3):
-    if city.lower() == "логойск":
-        city = "Lahojsk,BY"
-    
+    city = normalize_city(city)
     url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -105,67 +110,46 @@ def start(message):
         reply_markup=weather_buttons()
     )
 
-# === ОБРАБОТКА ЛЮБЫХ СООБЩЕНИЙ (ручной ввод) ===
 @bot.message_handler(func=lambda message: True)
 def handle_weather_request(message):
     city = message.text.strip()
-    
-    # Проверка на кнопки (если пользователь написал "Сегодня" и т.д.)
     if city.lower() in ["сегодня", "завтра", "3 дня", "оба города"]:
         bot.reply_to(message, "Используй кнопки ниже 👇", reply_markup=weather_buttons())
         return
-    
     w = get_weather(city)
     if w:
         bot.reply_to(message, f"🌤️ *{city}* сейчас:\n{w}", parse_mode='Markdown')
     else:
-        bot.reply_to(message, f"❌ Не удалось получить погоду для '{city}'. Проверь название города (например, Минск, Гродно, Брест).")
+        bot.reply_to(message, f"❌ Не удалось получить погоду для '{city}'. Проверь название города.")
 
-# === ОБРАБОТКА НАЖАТИЙ НА КНОПКИ ===
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    cities = {"Брест": "Brest", "Логойск": "Lahojsk,BY"}
-    
+    # Для кнопок тоже используем нормализацию
+    cities = {"Брест": "Brest", "Логойск": "Lahoysk"}  # заменил на Lahoysk
     if call.data == 'today':
         text = "🌤️ *Погода сегодня:*\n\n"
         for name, eng in cities.items():
             w = get_weather(eng)
-            if w:
-                text += f"*{name}:*\n{w}\n\n"
-            else:
-                text += f"*{name}:* ❌ Ошибка\n\n"
+            text += f"*{name}:*\n{w}\n\n" if w else f"*{name}:* ❌ Ошибка\n\n"
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    
     elif call.data == 'tomorrow':
         text = "🌥️ *Погода завтра:*\n\n"
         for name, eng in cities.items():
             f = get_forecast(eng, 1)
-            if f:
-                text += f"*{name}:*\n{f}\n\n"
-            else:
-                text += f"*{name}:* ❌ Нет данных\n\n"
+            text += f"*{name}:*\n{f}\n\n" if f else f"*{name}:* ❌ Нет данных\n\n"
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    
     elif call.data == '3days':
         text = "📅 *Прогноз на 3 дня:*\n\n"
         for name, eng in cities.items():
             f = get_daily_forecast(eng, 3)
-            if f:
-                text += f"*{name}:*\n{f}\n\n"
-            else:
-                text += f"*{name}:* ❌ Нет данных\n\n"
+            text += f"*{name}:*\n{f}\n\n" if f else f"*{name}:* ❌ Нет данных\n\n"
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    
     elif call.data == 'both':
         text = "🌍 *Сводка по городам:*\n\n"
         for name, eng in cities.items():
             w = get_weather(eng)
-            if w:
-                text += f"*{name}* сейчас:\n{w}\n\n"
-            else:
-                text += f"*{name}:* ❌ Ошибка\n\n"
+            text += f"*{name}* сейчас:\n{w}\n\n" if w else f"*{name}:* ❌ Ошибка\n\n"
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    
     bot.answer_callback_query(call.id)
 
 # === УТРЕННЯЯ РАССЫЛКА ===
@@ -173,14 +157,11 @@ def morning_broadcast():
     while True:
         now = datetime.now()
         if now.hour == 6 and now.minute == 0:
-            cities = {"Брест": "Brest", "Логойск": "Lahojsk,BY"}
+            cities = {"Брест": "Brest", "Логойск": "Lahoysk"}
             text = "🌅 *Доброе утро!*\n\nПогода сегодня:\n\n"
             for name, eng in cities.items():
                 w = get_weather(eng)
-                if w:
-                    text += f"*{name}:*\n{w}\n\n"
-                else:
-                    text += f"*{name}:* ❌ Ошибка\n\n"
+                text += f"*{name}:*\n{w}\n\n" if w else f"*{name}:* ❌ Ошибка\n\n"
             try:
                 bot.send_message(CHAT_ID, text, parse_mode='Markdown')
             except Exception as e:
@@ -206,7 +187,6 @@ if __name__ == "__main__":
 
     def run_bot():
         print("🤖 Бот запущен и ждёт сообщений...")
-        bot.remove_webhook()
         bot.infinity_polling()
 
     threading.Thread(target=run_bot, daemon=True).start()
