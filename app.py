@@ -19,8 +19,8 @@ bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
 # Глобальные переменные
-sent_offers = set()
-offers_lock = threading.Lock()  # Для безопасного доступа из разных потоков
+sent_offers = {}  # теперь словарь {site_name: set(offers)}
+offers_lock = threading.Lock()
 
 # ============================================
 # КЛАВИАТУРА
@@ -46,7 +46,7 @@ def is_logoysk(text):
     return any(kw in text_lower for kw in keywords)
 
 # ============================================
-# ПАРСИНГ 6 САЙТОВ
+# ПАРСИНГ 6 САЙТОВ (каждый возвращает список)
 # ============================================
 def parse_kufar():
     offers = []
@@ -207,66 +207,88 @@ def parse_gde():
     return offers
 
 # ============================================
-# СБОР ВСЕХ ОБЪЯВЛЕНИЙ
+# СБОР ВСЕХ ОБЪЯВЛЕНИЙ (возвращает словарь)
 # ============================================
 def get_all_offers():
-    all_offers = []
+    """Возвращает словарь {site_name: set(offers)}"""
+    result = {}
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Парсинг (только Логойск)...")
     
-    sites = [
-        ("Kufar", parse_kufar),
-        ("Realt", parse_realt),
-        ("Domovita", parse_domovita),
-        ("Neagent", parse_neagent),
-        ("Hata", parse_hata),
-        ("Gde", parse_gde),
-    ]
+    sites = {
+        "Kufar": parse_kufar,
+        "Realt": parse_realt,
+        "Domovita": parse_domovita,
+        "Neagent": parse_neagent,
+        "Hata": parse_hata,
+        "Gde": parse_gde,
+    }
     
-    for name, func in sites:
+    for name, func in sites.items():
         try:
             offers = func()
-            all_offers.extend(offers)
+            result[name] = set(offers)
             print(f"  {name}: {len(offers)}")
         except Exception as e:
             print(f"  {name}: Ошибка - {e}")
+            result[name] = set()
     
-    print(f"  Всего (Логойск): {len(all_offers)}")
-    return all_offers
+    total = sum(len(s) for s in result.values())
+    print(f"  Всего (Логойск): {total}")
+    return result
 
 # ============================================
-# МОНИТОРИНГ
+# МОНИТОРИНГ (сравниваем по сайтам)
 # ============================================
 def monitor_offers():
     global sent_offers
     print("🔄 Мониторинг запущен (только Логойск)...")
     
     with offers_lock:
-        sent_offers = set(get_all_offers())
-        print(f"✅ Отслеживается {len(sent_offers)} объявлений")
+        sent_offers = get_all_offers()
+        total = sum(len(s) for s in sent_offers.values())
+        print(f"✅ Отслеживается {total} объявлений")
     
-    if sent_offers:
+    # Отправляем текущие объявления с группировкой по сайтам
+    if total > 0:
         try:
-            bot.send_message(CHAT_ID, f"📋 ТЕКУЩИЕ ОБЪЯВЛЕНИЯ В ЛОГОЙСКЕ ({len(sent_offers)} шт.)")
-            for offer in list(sent_offers)[:10]:
-                bot.send_message(CHAT_ID, offer)
-                time.sleep(0.5)
+            bot.send_message(CHAT_ID, f"📋 ТЕКУЩИЕ ОБЪЯВЛЕНИЯ В ЛОГОЙСКЕ (всего {total})")
+            for site, offers in sent_offers.items():
+                if offers:
+                    bot.send_message(CHAT_ID, f"🔹 *{site}* — {len(offers)} объявлений", parse_mode='Markdown')
+                    for offer in list(offers)[:5]:  # показываем первые 5 с каждого сайта
+                        bot.send_message(CHAT_ID, offer)
+                        time.sleep(0.3)
+                    if len(offers) > 5:
+                        bot.send_message(CHAT_ID, f"... и еще {len(offers)-5} на {site}")
         except Exception as e:
             print(f"Ошибка отправки: {e}")
     
     while True:
         try:
             with offers_lock:
-                current_offers = set(get_all_offers())
-                new_offers = current_offers - sent_offers
+                current_offers = get_all_offers()
+                # Находим новые объявления по каждому сайту
+                new_by_site = {}
+                total_new = 0
+                for site, curr_set in current_offers.items():
+                    prev_set = sent_offers.get(site, set())
+                    new_set = curr_set - prev_set
+                    if new_set:
+                        new_by_site[site] = new_set
+                        total_new += len(new_set)
             
-            if new_offers:
-                print(f"🔔 НОВЫХ: {len(new_offers)}")
-                bot.send_message(CHAT_ID, f"🔔 НОВЫЕ ОБЪЯВЛЕНИЯ В ЛОГОЙСКЕ ({len(new_offers)} шт.)")
-                for offer in new_offers:
-                    bot.send_message(CHAT_ID, f"🔔 НОВОЕ ОБЪЯВЛЕНИЕ!\n\n{offer}")
-                    time.sleep(1)
+            if total_new > 0:
+                print(f"🔔 НОВЫХ: {total_new}")
+                bot.send_message(CHAT_ID, f"🔔 НОВЫЕ ОБЪЯВЛЕНИЯ В ЛОГОЙСКЕ (всего {total_new})")
+                for site, new_set in new_by_site.items():
+                    bot.send_message(CHAT_ID, f"🔹 *{site}* — {len(new_set)} новых", parse_mode='Markdown')
+                    for offer in new_set:
+                        bot.send_message(CHAT_ID, f"🔔 НОВОЕ ОБЪЯВЛЕНИЕ!\n\n{offer}")
+                        time.sleep(1)
+                # Обновляем sent_offers
                 with offers_lock:
-                    sent_offers = current_offers
+                    for site, curr_set in current_offers.items():
+                        sent_offers[site] = curr_set
             else:
                 print("Новых объявлений нет")
         except Exception as e:
@@ -285,7 +307,7 @@ def start_cmd(message):
         "🏠 *Бот аренды Логойск*\n\n"
         "Я ищу объявления об аренде квартир в Логойске на 6 сайтах.\n\n"
         "📌 *Что умею:*\n"
-        "• Показывать текущие объявления\n"
+        "• Показывать текущие объявления с разбивкой по сайтам\n"
         "• Отслеживать новые каждые 5 минут\n"
         "• Присылать уведомления о новых\n\n"
         "👇 *Используй кнопки ниже:*",
@@ -296,40 +318,38 @@ def start_cmd(message):
 @bot.message_handler(commands=['stats'])
 def stats_cmd(message):
     with offers_lock:
-        count = len(sent_offers)
+        total = sum(len(s) for s in sent_offers.values())
+        stats_lines = [f"📊 *СТАТИСТИКА*\n\nОбщее объявлений: *{total}*"]
+        for site, offers in sent_offers.items():
+            stats_lines.append(f"• {site}: *{len(offers)}*")
     bot.send_message(
         message.chat.id,
-        f"📊 *СТАТИСТИКА*\n\n"
-        f"• Отслеживается: *{count}* объявлений\n"
-        f"• Интервал: *{CHECK_INTERVAL} сек* (5 мин)\n"
-        f"• Сайтов: *6*\n"
-        f"• Фильтр: *Только Логойск*\n"
-        f"• Статус: *✅ Активен*",
+        "\n".join(stats_lines),
         parse_mode='Markdown'
     )
 
-# ============================================
-# ГЛАВНЫЙ ОБРАБОТЧИК КНОПОК (С ИСПРАВЛЕНИЕМ)
-# ============================================
 @bot.message_handler(func=lambda message: True)
 def handle_buttons(message):
-    # !!! ПРАВИЛЬНОЕ МЕСТО ДЛЯ global !!!
     global sent_offers
-
     text = message.text
     
     if text == "📋 Показать объявления":
         with offers_lock:
-            current_offers = list(sent_offers)
-        if current_offers:
-            bot.send_message(message.chat.id, f"📋 *ТЕКУЩИЕ ОБЪЯВЛЕНИЯ ({len(current_offers)} шт.)*", parse_mode='Markdown')
-            for offer in current_offers[:10]:
-                bot.send_message(message.chat.id, offer)
-                time.sleep(0.3)
-            if len(current_offers) > 10:
-                bot.send_message(message.chat.id, f"... и еще {len(current_offers) - 10} объявлений")
-        else:
+            total = sum(len(s) for s in sent_offers.values())
+        if total == 0:
             bot.send_message(message.chat.id, "😕 Пока нет объявлений в Логойске")
+            return
+        
+        bot.send_message(message.chat.id, f"📋 *ВСЕ ОБЪЯВЛЕНИЯ (всего {total})*", parse_mode='Markdown')
+        with offers_lock:
+            for site, offers in sent_offers.items():
+                if offers:
+                    bot.send_message(message.chat.id, f"🔹 *{site}* — {len(offers)} объявлений", parse_mode='Markdown')
+                    for offer in list(offers)[:5]:
+                        bot.send_message(message.chat.id, offer)
+                        time.sleep(0.3)
+                    if len(offers) > 5:
+                        bot.send_message(message.chat.id, f"... и еще {len(offers)-5} на {site}")
     
     elif text == "📊 Статистика":
         stats_cmd(message)
@@ -337,11 +357,11 @@ def handle_buttons(message):
     elif text == "🔄 Обновить":
         bot.send_message(message.chat.id, "🔄 Обновляю объявления...")
         with offers_lock:
-            sent_offers = set(get_all_offers())
-            count = len(sent_offers)
+            sent_offers = get_all_offers()
+            total = sum(len(s) for s in sent_offers.values())
         bot.send_message(
             message.chat.id,
-            f"✅ Обновлено! Отслеживается *{count}* объявлений",
+            f"✅ Обновлено! Отслеживается *{total}* объявлений",
             parse_mode='Markdown'
         )
     
@@ -353,8 +373,8 @@ def handle_buttons(message):
             "• /start — Главное меню\n"
             "• /stats — Статистика\n\n"
             "📌 *Кнопки:*\n"
-            "• Показать объявления — список текущих\n"
-            "• Статистика — количество и статус\n"
+            "• Показать объявления — список с разбивкой по сайтам\n"
+            "• Статистика — количество по каждому сайту\n"
             "• Обновить — принудительно обновить\n\n"
             "🔄 *Авто-уведомления:* новые объявления приходят сами каждые 5 минут",
             parse_mode='Markdown'
@@ -391,7 +411,7 @@ def health():
 # ============================================
 if __name__ == '__main__':
     print("=" * 50)
-    print("🤖 БОТ АРЕНДА ЛОГОЙСК (С КНОПКАМИ)")
+    print("🤖 БОТ АРЕНДА ЛОГОЙСК (С КНОПКАМИ И ГРУППИРОВКОЙ)")
     print("=" * 50)
     
     threading.Thread(target=monitor_offers, daemon=True).start()
