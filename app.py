@@ -37,15 +37,7 @@ def main_keyboard():
     return keyboard
 
 # ============================================
-# ПРОВЕРКА ЛОГОЙСКА
-# ============================================
-def is_logoysk(text):
-    text_lower = text.lower()
-    keywords = ['логойск', 'logoysk', 'logojsk', 'логойский']
-    return any(kw in text_lower for kw in keywords)
-
-# ============================================
-# ПАРСИНГ KUFAR (исправлен)
+# ПАРСИНГ KUFAR (БЕЗ ФИЛЬТРА)
 # ============================================
 def parse_kufar():
     offers = []
@@ -55,7 +47,7 @@ def parse_kufar():
         r = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(r.text, 'html.parser')
         items = soup.find_all('div', class_=lambda x: x and ('item' in x.lower() or 'card' in x.lower()))
-        print(f"  Kufar: найдено {len(items)} объявлений до фильтрации")
+        print(f"  Kufar: найдено {len(items)} объявлений")
         
         for item in items:
             try:
@@ -67,19 +59,12 @@ def parse_kufar():
                 if link and link.startswith('/'):
                     link = "https://re.kufar.by" + link
                 
-                address_elem = item.find('div', class_=lambda x: x and ('address' in x.lower() or 'location' in x.lower()))
-                address = address_elem.text.strip() if address_elem else ""
-                full_text = title + " " + address
-                
-                if not is_logoysk(full_text):
-                    continue
-                
                 price_elem = item.find('span', class_=lambda x: x and 'price' in x.lower())
                 price = price_elem.text.strip() if price_elem else "Цена не указана"
                 
-                offer_text = f"🏠 {title[:50]}\n💰 {price}\n📍 {address[:30]}\n🔗 {link}"
+                offer_text = f"🏠 {title[:50]}\n💰 {price}\n🔗 {link}"
                 offers.append(offer_text)
-                if len(offers) >= 10:
+                if len(offers) >= 15:
                     break
             except:
                 continue
@@ -88,7 +73,7 @@ def parse_kufar():
     return offers
 
 # ============================================
-# ПАРСИНГ REALT
+# ПАРСИНГ REALT (БЕЗ ФИЛЬТРА)
 # ============================================
 def parse_realt():
     offers = []
@@ -102,21 +87,17 @@ def parse_realt():
             if a and a.get('href'):
                 txt = a.text.strip()
                 link = "https://realt.by" + a['href'] if a['href'].startswith('/') else a['href']
-                
-                if not is_logoysk(txt):
-                    continue
-                
                 if txt:
                     offer_text = f"🏠 {txt[:50]}\n🔗 {link}"
                     offers.append(offer_text)
-                if len(offers) >= 10:
+                if len(offers) >= 15:
                     break
     except Exception as e:
         print(f"Ошибка Realt: {e}")
     return offers
 
 # ============================================
-# ПАРСИНГ DOMOVITA
+# ПАРСИНГ DOMOVITA (БЕЗ ФИЛЬТРА)
 # ============================================
 def parse_domovita():
     offers = []
@@ -130,21 +111,17 @@ def parse_domovita():
             if a and a.get('href'):
                 txt = a.text.strip()
                 link = "https://domovita.by" + a['href'] if a['href'].startswith('/') else a['href']
-                
-                if not is_logoysk(txt):
-                    continue
-                
                 if txt:
                     offer_text = f"🏠 {txt[:50]}\n🔗 {link}"
                     offers.append(offer_text)
-                if len(offers) >= 10:
+                if len(offers) >= 15:
                     break
     except Exception as e:
         print(f"Ошибка Domovita: {e}")
     return offers
 
 # ============================================
-# ПАРСИНГ NEAGENT
+# ПАРСИНГ NEAGENT (БЕЗ ФИЛЬТРА)
 # ============================================
 def parse_neagent():
     offers = []
@@ -158,21 +135,17 @@ def parse_neagent():
             if a and a.get('href'):
                 txt = a.text.strip()
                 link = "https://neagent.by" + a['href'] if a['href'].startswith('/') else a['href']
-                
-                if not is_logoysk(txt):
-                    continue
-                
                 if txt:
                     offer_text = f"🏠 {txt[:50]}\n🔗 {link}"
                     offers.append(offer_text)
-                if len(offers) >= 10:
+                if len(offers) >= 15:
                     break
     except Exception as e:
         print(f"Ошибка Neagent: {e}")
     return offers
 
 # ============================================
-# ПАРСИНГ HATA
+# ПАРСИНГ HATA (БЕЗ ФИЛЬТРА)
 # ============================================
 def parse_hata():
     offers = []
@@ -186,21 +159,17 @@ def parse_hata():
             if a and a.get('href'):
                 txt = a.text.strip()
                 link = "https://hata.by" + a['href'] if a['href'].startswith('/') else a['href']
-                
-                if not is_logoysk(txt):
-                    continue
-                
                 if txt:
                     offer_text = f"🏠 {txt[:50]}\n🔗 {link}"
                     offers.append(offer_text)
-                if len(offers) >= 10:
+                if len(offers) >= 15:
                     break
     except Exception as e:
         print(f"Ошибка Hata: {e}")
     return offers
 
 # ============================================
-# ПАРСИНГ GDE
+# ПАРСИНГ GDE (БЕЗ ФИЛЬТРА)
 # ============================================
 def parse_gde():
     offers = []
@@ -214,14 +183,10 @@ def parse_gde():
             if a and a.get('href'):
                 txt = a.text.strip()
                 link = "https://gde.by" + a['href'] if a['href'].startswith('/') else a['href']
-                
-                if not is_logoysk(txt):
-                    continue
-                
                 if txt:
                     offer_text = f"🏠 {txt[:50]}\n🔗 {link}"
                     offers.append(offer_text)
-                if len(offers) >= 10:
+                if len(offers) >= 15:
                     break
     except Exception as e:
         print(f"Ошибка Gde: {e}")
@@ -232,7 +197,7 @@ def parse_gde():
 # ============================================
 def get_all_offers():
     result = {}
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Парсинг (только Логойск)...")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Парсинг (Минская область)...")
     
     sites = {
         "Kufar": parse_kufar,
@@ -253,7 +218,7 @@ def get_all_offers():
             result[name] = set()
     
     total = sum(len(s) for s in result.values())
-    print(f"  Всего (Логойск): {total}")
+    print(f"  Всего: {total}")
     return result
 
 # ============================================
@@ -261,7 +226,7 @@ def get_all_offers():
 # ============================================
 def monitor_offers():
     global sent_offers
-    print("🔄 Мониторинг запущен (только Логойск)...")
+    print("🔄 Мониторинг запущен...")
     
     with offers_lock:
         sent_offers = get_all_offers()
@@ -270,7 +235,7 @@ def monitor_offers():
     
     if total > 0:
         try:
-            bot.send_message(CHAT_ID, f"📋 ТЕКУЩИЕ ОБЪЯВЛЕНИЯ В ЛОГОЙСКЕ (всего {total})")
+            bot.send_message(CHAT_ID, f"📋 ТЕКУЩИЕ ОБЪЯВЛЕНИЯ (всего {total})")
             for site, offers in sent_offers.items():
                 if offers:
                     bot.send_message(CHAT_ID, f"🔹 *{site}* — {len(offers)} объявлений", parse_mode='Markdown')
@@ -297,7 +262,7 @@ def monitor_offers():
             
             if total_new > 0:
                 print(f"🔔 НОВЫХ: {total_new}")
-                bot.send_message(CHAT_ID, f"🔔 НОВЫЕ ОБЪЯВЛЕНИЯ В ЛОГОЙСКЕ (всего {total_new})")
+                bot.send_message(CHAT_ID, f"🔔 НОВЫЕ ОБЪЯВЛЕНИЯ (всего {total_new})")
                 for site, new_set in new_by_site.items():
                     bot.send_message(CHAT_ID, f"🔹 *{site}* — {len(new_set)} новых", parse_mode='Markdown')
                     for offer in new_set:
@@ -321,8 +286,8 @@ def monitor_offers():
 def start_cmd(message):
     bot.send_message(
         message.chat.id,
-        "🏠 *Бот аренды Логойск*\n\n"
-        "Я ищу объявления об аренде квартир в Логойске на 6 сайтах.\n\n"
+        "🏠 *Бот аренды Минской области*\n\n"
+        "Я ищу объявления об аренде квартир в Минской области на 6 сайтах.\n\n"
         "📌 *Что умею:*\n"
         "• Показывать текущие объявления с разбивкой по сайтам\n"
         "• Отслеживать новые каждые 5 минут\n"
@@ -354,7 +319,7 @@ def handle_buttons(message):
         with offers_lock:
             total = sum(len(s) for s in sent_offers.values())
         if total == 0:
-            bot.send_message(message.chat.id, "😕 Пока нет объявлений в Логойске")
+            bot.send_message(message.chat.id, "😕 Пока нет объявлений")
             return
         
         bot.send_message(message.chat.id, f"📋 *ВСЕ ОБЪЯВЛЕНИЯ (всего {total})*", parse_mode='Markdown')
@@ -417,7 +382,7 @@ def webhook():
         except Exception as e:
             print(f"Ошибка вебхука: {e}")
             return "ERROR", 500
-    return "Бот работает (Логойск)", 200
+    return "Бот работает", 200
 
 @app.route('/health')
 def health():
@@ -428,7 +393,7 @@ def health():
 # ============================================
 if __name__ == '__main__':
     print("=" * 50)
-    print("🤖 БОТ АРЕНДА ЛОГОЙСК (С КНОПКАМИ И ГРУППИРОВКОЙ)")
+    print("🤖 БОТ АРЕНДА (БЕЗ ФИЛЬТРА)")
     print("=" * 50)
     
     threading.Thread(target=monitor_offers, daemon=True).start()
