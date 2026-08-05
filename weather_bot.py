@@ -102,8 +102,8 @@ def weather_cmd(message):
 # === ОБРАБОТКА НАЖАТИЙ ===
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    # ИСПРАВЛЕНО: Logoysk → Lahojsk
-    cities = {"Брест": "Brest", "Логойск": "Lahojsk"}
+    # ИСПРАВЛЕНО: Логойск с кодом страны
+    cities = {"Брест": "Brest", "Логойск": "Lahojsk,BY"}
     if call.data == 'today':
         text = "🌤️ *Погода сегодня:*\n\n"
         for name, eng in cities.items():
@@ -147,7 +147,7 @@ def morning_broadcast():
     while True:
         now = datetime.now()
         if now.hour == 6 and now.minute == 0:
-            cities = {"Брест": "Brest", "Логойск": "Lahojsk"}  # тоже исправлено
+            cities = {"Брест": "Brest", "Логойск": "Lahojsk,BY"}
             text = "🌅 *Доброе утро!*\n\nПогода сегодня:\n\n"
             for name, eng in cities.items():
                 w = get_weather(eng)
