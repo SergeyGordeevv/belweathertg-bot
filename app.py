@@ -18,8 +18,7 @@ CHECK_INTERVAL = 300
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# Глобальные переменные
-sent_offers = {}  # теперь словарь {site_name: set(offers)}
+sent_offers = {}
 offers_lock = threading.Lock()
 
 # ============================================
@@ -46,7 +45,7 @@ def is_logoysk(text):
     return any(kw in text_lower for kw in keywords)
 
 # ============================================
-# ПАРСИНГ 6 САЙТОВ (каждый возвращает список)
+# ПАРСИНГ KUFAR (исправлен)
 # ============================================
 def parse_kufar():
     offers = []
@@ -55,7 +54,10 @@ def parse_kufar():
     try:
         r = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(r.text, 'html.parser')
-        for item in soup.find_all('div', class_=lambda x: x and ('item' in x.lower() or 'card' in x.lower())):
+        items = soup.find_all('div', class_=lambda x: x and ('item' in x.lower() or 'card' in x.lower()))
+        print(f"  Kufar: найдено {len(items)} объявлений до фильтрации")
+        
+        for item in items:
             try:
                 title_elem = item.find('a', class_=lambda x: x and ('title' in x.lower() or 'link' in x.lower()))
                 if not title_elem:
@@ -65,13 +67,17 @@ def parse_kufar():
                 if link and link.startswith('/'):
                     link = "https://re.kufar.by" + link
                 
-                if not is_logoysk(title):
+                address_elem = item.find('div', class_=lambda x: x and ('address' in x.lower() or 'location' in x.lower()))
+                address = address_elem.text.strip() if address_elem else ""
+                full_text = title + " " + address
+                
+                if not is_logoysk(full_text):
                     continue
                 
                 price_elem = item.find('span', class_=lambda x: x and 'price' in x.lower())
                 price = price_elem.text.strip() if price_elem else "Цена не указана"
                 
-                offer_text = f"🏠 {title[:50]}\n💰 {price}\n🔗 {link}"
+                offer_text = f"🏠 {title[:50]}\n💰 {price}\n📍 {address[:30]}\n🔗 {link}"
                 offers.append(offer_text)
                 if len(offers) >= 10:
                     break
@@ -81,6 +87,9 @@ def parse_kufar():
         print(f"Ошибка Kufar: {e}")
     return offers
 
+# ============================================
+# ПАРСИНГ REALT
+# ============================================
 def parse_realt():
     offers = []
     url = "https://realt.by/rent/flats/"
@@ -106,6 +115,9 @@ def parse_realt():
         print(f"Ошибка Realt: {e}")
     return offers
 
+# ============================================
+# ПАРСИНГ DOMOVITA
+# ============================================
 def parse_domovita():
     offers = []
     url = "https://domovita.by/minsk/arenda-kvartir/"
@@ -131,6 +143,9 @@ def parse_domovita():
         print(f"Ошибка Domovita: {e}")
     return offers
 
+# ============================================
+# ПАРСИНГ NEAGENT
+# ============================================
 def parse_neagent():
     offers = []
     url = "https://neagent.by/rent/"
@@ -156,6 +171,9 @@ def parse_neagent():
         print(f"Ошибка Neagent: {e}")
     return offers
 
+# ============================================
+# ПАРСИНГ HATA
+# ============================================
 def parse_hata():
     offers = []
     url = "https://hata.by/logojskij-rajon/"
@@ -181,6 +199,9 @@ def parse_hata():
         print(f"Ошибка Hata: {e}")
     return offers
 
+# ============================================
+# ПАРСИНГ GDE
+# ============================================
 def parse_gde():
     offers = []
     url = "https://gde.by/arenda/kvartiry/"
@@ -207,10 +228,9 @@ def parse_gde():
     return offers
 
 # ============================================
-# СБОР ВСЕХ ОБЪЯВЛЕНИЙ (возвращает словарь)
+# СБОР ВСЕХ ОБЪЯВЛЕНИЙ
 # ============================================
 def get_all_offers():
-    """Возвращает словарь {site_name: set(offers)}"""
     result = {}
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Парсинг (только Логойск)...")
     
@@ -237,7 +257,7 @@ def get_all_offers():
     return result
 
 # ============================================
-# МОНИТОРИНГ (сравниваем по сайтам)
+# МОНИТОРИНГ
 # ============================================
 def monitor_offers():
     global sent_offers
@@ -248,14 +268,13 @@ def monitor_offers():
         total = sum(len(s) for s in sent_offers.values())
         print(f"✅ Отслеживается {total} объявлений")
     
-    # Отправляем текущие объявления с группировкой по сайтам
     if total > 0:
         try:
             bot.send_message(CHAT_ID, f"📋 ТЕКУЩИЕ ОБЪЯВЛЕНИЯ В ЛОГОЙСКЕ (всего {total})")
             for site, offers in sent_offers.items():
                 if offers:
                     bot.send_message(CHAT_ID, f"🔹 *{site}* — {len(offers)} объявлений", parse_mode='Markdown')
-                    for offer in list(offers)[:5]:  # показываем первые 5 с каждого сайта
+                    for offer in list(offers)[:5]:
                         bot.send_message(CHAT_ID, offer)
                         time.sleep(0.3)
                     if len(offers) > 5:
@@ -267,7 +286,6 @@ def monitor_offers():
         try:
             with offers_lock:
                 current_offers = get_all_offers()
-                # Находим новые объявления по каждому сайту
                 new_by_site = {}
                 total_new = 0
                 for site, curr_set in current_offers.items():
@@ -285,7 +303,6 @@ def monitor_offers():
                     for offer in new_set:
                         bot.send_message(CHAT_ID, f"🔔 НОВОЕ ОБЪЯВЛЕНИЕ!\n\n{offer}")
                         time.sleep(1)
-                # Обновляем sent_offers
                 with offers_lock:
                     for site, curr_set in current_offers.items():
                         sent_offers[site] = curr_set
