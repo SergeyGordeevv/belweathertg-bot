@@ -7,12 +7,11 @@ from flask import Flask
 from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# === ТВОИ ДАННЫЕ (вставлены напрямую) ===
+# === ТВОИ ДАННЫЕ ===
 BOT_TOKEN = "8896032923:AAEknV_8BncvHKO_555q41qwTUwNEW75sYM"
-WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")  # этот ключ оставь в переменной окружения
-CHAT_ID = -1003811989111  # ID твоей группы
+WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
+CHAT_ID = -1003811989111
 
-# Проверка, что ключ погоды задан
 if not WEATHER_API_KEY:
     raise ValueError("Не задан WEATHER_API_KEY! Добавь его в переменные окружения Render.")
 
@@ -100,10 +99,11 @@ def start(message):
 def weather_cmd(message):
     bot.reply_to(message, "Выбери город и период:", reply_markup=weather_buttons())
 
-# === ОБРАБОТКА НАЖАТИЙ НА КНОПКИ ===
+# === ОБРАБОТКА НАЖАТИЙ ===
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    cities = {"Брест": "Brest", "Логойск": "Logoysk"}
+    # ИСПРАВЛЕНО: Logoysk → Lahojsk
+    cities = {"Брест": "Brest", "Логойск": "Lahojsk"}
     if call.data == 'today':
         text = "🌤️ *Погода сегодня:*\n\n"
         for name, eng in cities.items():
@@ -142,12 +142,12 @@ def callback_handler(call):
         bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
     bot.answer_callback_query(call.id)
 
-# === УТРЕННЯЯ РАССЫЛКА В 6:00 ===
+# === УТРЕННЯЯ РАССЫЛКА ===
 def morning_broadcast():
     while True:
         now = datetime.now()
         if now.hour == 6 and now.minute == 0:
-            cities = {"Брест": "Brest", "Логойск": "Logoysk"}
+            cities = {"Брест": "Brest", "Логойск": "Lahojsk"}  # тоже исправлено
             text = "🌅 *Доброе утро!*\n\nПогода сегодня:\n\n"
             for name, eng in cities.items():
                 w = get_weather(eng)
@@ -176,18 +176,15 @@ if __name__ == "__main__":
     print("🌤️ ПОГОДНЫЙ БОТ ЗАПУЩЕН")
     print("=" * 40)
 
-    # Запускаем утреннюю рассылку в фоне
     threading.Thread(target=morning_broadcast, daemon=True).start()
 
-    # Запускаем бота с принудительным сбросом вебхука
     def run_bot():
         print("🤖 Бот запущен и ждёт сообщений...")
-        bot.remove_webhook()  # сбрасываем вебхук, чтобы избежать 409
+        bot.remove_webhook()
         bot.infinity_polling()
 
     threading.Thread(target=run_bot, daemon=True).start()
 
-    # Веб-сервер
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Веб-сервер на порту {port}")
     app.run(host="0.0.0.0", port=port)
