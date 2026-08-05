@@ -7,10 +7,10 @@ from flask import Flask
 from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# === ТВОИ ДАННЫЕ ===
-BOT_TOKEN = "8896032923:AAEknV_8BncvHKO_555q41qwTUwNEW75sYM"
+# === ТВОЙ НОВЫЙ ТОКЕН ===
+BOT_TOKEN = "8896032923:AAG2iABXbLJOW9PEhnBluChgf60IoWeZvPk"
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
-CHAT_ID = -1003811989111
+CHAT_ID = -1003811989111  # ID группы
 
 if not WEATHER_API_KEY:
     raise ValueError("Не задан WEATHER_API_KEY! Добавь его в переменные окружения Render.")
@@ -18,9 +18,12 @@ if not WEATHER_API_KEY:
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
+# Глобальная переменная для хранения последнего города
+last_city = None
+
 # === ФУНКЦИИ ПОГОДЫ ===
+
 def get_weather_by_city(city):
-    """По названию города"""
     url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -32,7 +35,6 @@ def get_weather_by_city(city):
         return None
 
 def get_weather_by_coords(lat, lon):
-    """По координатам (для Логойска)"""
     url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -44,7 +46,6 @@ def get_weather_by_coords(lat, lon):
         return None
 
 def parse_weather_data(data):
-    """Парсинг общих данных погоды"""
     try:
         temp = round(data['main']['temp'])
         feels = round(data['main']['feels_like'])
@@ -127,146 +128,124 @@ def parse_daily_forecast(data, days=3):
     except:
         return None
 
-# === ОСНОВНАЯ ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ПОГОДЫ (автоматический выбор) ===
-def get_weather_for_city(city_name):
-    # Если это Логойск — используем координаты
-    if city_name.lower() == "логойск":
-        return get_weather_by_coords(54.2035, 27.8520)
-    else:
-        return get_weather_by_city(city_name)
-
-def get_forecast_for_city(city_name, days=1):
-    if city_name.lower() == "логойск":
-        return get_forecast_by_coords(54.2035, 27.8520, days)
-    else:
-        return get_forecast_by_city(city_name, days)
-
-def get_daily_forecast_for_city(city_name, days=3):
-    if city_name.lower() == "логойск":
-        return get_daily_forecast_by_coords(54.2035, 27.8520, days)
-    else:
-        return get_daily_forecast_by_city(city_name, days)
-
-# === КНОПКИ ===
-def weather_buttons():
-    keyboard = InlineKeyboardMarkup(row_width=2)
+# === КНОПКИ (только сегодня, завтра, 3 дня) ===
+def period_buttons():
+    keyboard = InlineKeyboardMarkup(row_width=3)
     btn1 = InlineKeyboardButton("🌤️ Сегодня", callback_data='today')
     btn2 = InlineKeyboardButton("🌥️ Завтра", callback_data='tomorrow')
     btn3 = InlineKeyboardButton("📅 3 дня", callback_data='3days')
-    btn4 = InlineKeyboardButton("🏠 Оба города", callback_data='both')
-    keyboard.add(btn1, btn2, btn3, btn4)
+    keyboard.add(btn1, btn2, btn3)
     return keyboard
 
-# === КОМАНДЫ ===
+# === КОМАНДА /start ===
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(
         message,
-        "🌤️ *Погодный бот для семьи!*\n\n"
+        "🌤️ *Погодный бот*\n\n"
         "Просто напиши название города (например, *Минск*, *Гродно*, *Брест*)\n"
-        "Или нажми на кнопку ниже 👇",
+        "Затем нажми на кнопку, чтобы узнать погоду на нужный период.",
         parse_mode='Markdown',
-        reply_markup=weather_buttons()
+        reply_markup=period_buttons()
     )
 
-# === ОБРАБОТКА РУЧНОГО ВВОДА ===
+# === ОБРАБОТКА ВВОДА ГОРОДА ===
 @bot.message_handler(func=lambda message: True)
-def handle_weather_request(message):
+def handle_city_input(message):
+    global last_city
     city = message.text.strip()
-    
-    # Если это слова-команды кнопок — направляем на кнопки
-    if city.lower() in ["сегодня", "завтра", "3 дня", "оба города"]:
-        bot.reply_to(message, "Используй кнопки ниже 👇", reply_markup=weather_buttons())
+    # Проверяем, является ли сообщение командой кнопки (чтобы не обрабатывать как город)
+    if city.lower() in ["сегодня", "завтра", "3 дня"]:
+        bot.reply_to(message, "Используй кнопки ниже 👇", reply_markup=period_buttons())
         return
-    
-    w = get_weather_for_city(city)
+    # Проверяем погоду для введённого города
+    w = get_weather_by_city(city)
     if w:
-        bot.reply_to(message, f"🌤️ *{city}* сейчас:\n{w}", parse_mode='Markdown')
+        last_city = city  # запоминаем город
+        bot.reply_to(
+            message,
+            f"🌤️ *{city}* сейчас:\n{w}\n\nТеперь выбери период на кнопках 👇",
+            parse_mode='Markdown',
+            reply_markup=period_buttons()
+        )
     else:
-        bot.reply_to(message, f"❌ Не удалось получить погоду для '{city}'. Проверь название или попробуй другой город.")
+        # Если не нашли по названию, пробуем как Логойск (по координатам)
+        if city.lower() == "логойск":
+            w = get_weather_by_coords(54.2035, 27.8520)
+            if w:
+                last_city = "Логойск"
+                bot.reply_to(
+                    message,
+                    f"🌤️ *Логойск* сейчас:\n{w}\n\nТеперь выбери период на кнопках 👇",
+                    parse_mode='Markdown',
+                    reply_markup=period_buttons()
+                )
+                return
+        bot.reply_to(message, f"❌ Город '{city}' не найден. Проверь название или попробуй другой.")
 
-# === ОБРАБОТКА НАЖАТИЙ НА КНОПКИ ===
+# === ОБРАБОТКА НАЖАТИЙ КНОПОК ===
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    # Для кнопок используем координаты для Логойска и название для Бреста
-    cities = {
-        "Брест": {"type": "name", "value": "Brest"},
-        "Логойск": {"type": "coords", "lat": 54.2035, "lon": 27.8520}
-    }
-    
-    if call.data == 'today':
-        text = "🌤️ *Погода сегодня:*\n\n"
-        for name, info in cities.items():
-            if info["type"] == "name":
-                w = get_weather_by_city(info["value"])
-            else:
-                w = get_weather_by_coords(info["lat"], info["lon"])
-            if w:
-                text += f"*{name}:*\n{w}\n\n"
-            else:
-                text += f"*{name}:* ❌ Ошибка\n\n"
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    
-    elif call.data == 'tomorrow':
-        text = "🌥️ *Погода завтра:*\n\n"
-        for name, info in cities.items():
-            if info["type"] == "name":
-                f = get_forecast_by_city(info["value"], 1)
-            else:
-                f = get_forecast_by_coords(info["lat"], info["lon"], 1)
-            if f:
-                text += f"*{name}:*\n{f}\n\n"
-            else:
-                text += f"*{name}:* ❌ Нет данных\n\n"
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    
-    elif call.data == '3days':
-        text = "📅 *Прогноз на 3 дня:*\n\n"
-        for name, info in cities.items():
-            if info["type"] == "name":
-                f = get_daily_forecast_by_city(info["value"], 3)
-            else:
-                f = get_daily_forecast_by_coords(info["lat"], info["lon"], 3)
-            if f:
-                text += f"*{name}:*\n{f}\n\n"
-            else:
-                text += f"*{name}:* ❌ Нет данных\n\n"
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    
-    elif call.data == 'both':
-        text = "🌍 *Сводка по городам:*\n\n"
-        for name, info in cities.items():
-            if info["type"] == "name":
-                w = get_weather_by_city(info["value"])
-            else:
-                w = get_weather_by_coords(info["lat"], info["lon"])
-            if w:
-                text += f"*{name}* сейчас:\n{w}\n\n"
-            else:
-                text += f"*{name}:* ❌ Ошибка\n\n"
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    
+    global last_city
+    if not last_city:
+        bot.answer_callback_query(call.id, "Сначала напиши название города!", show_alert=True)
+        return
+
+    city = last_city
+    # Если город Логойск, используем координаты для точности
+    if city.lower() == "логойск":
+        lat, lon = 54.2035, 27.8520
+        if call.data == 'today':
+            w = get_weather_by_coords(lat, lon)
+        elif call.data == 'tomorrow':
+            w = get_forecast_by_coords(lat, lon, 1)
+        elif call.data == '3days':
+            w = get_daily_forecast_by_coords(lat, lon, 3)
+        else:
+            w = None
+    else:
+        if call.data == 'today':
+            w = get_weather_by_city(city)
+        elif call.data == 'tomorrow':
+            w = get_forecast_by_city(city, 1)
+        elif call.data == '3days':
+            w = get_daily_forecast_by_city(city, 3)
+        else:
+            w = None
+
+    if w:
+        if call.data == 'today':
+            header = f"🌤️ *{city}* сегодня:"
+        elif call.data == 'tomorrow':
+            header = f"🌥️ *{city}* завтра:"
+        elif call.data == '3days':
+            header = f"📅 *{city}* на 3 дня:"
+        else:
+            header = ""
+        bot.edit_message_text(
+            f"{header}\n\n{w}",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=period_buttons()
+        )
+    else:
+        bot.answer_callback_query(call.id, "Не удалось получить прогноз, попробуй позже.", show_alert=True)
+
     bot.answer_callback_query(call.id)
 
-# === УТРЕННЯЯ РАССЫЛКА ===
+# === УТРЕННЯЯ РАССЫЛКА (Брест и Логойск) ===
 def morning_broadcast():
     while True:
         now = datetime.now()
         if now.hour == 6 and now.minute == 0:
-            cities = {
-                "Брест": {"type": "name", "value": "Brest"},
-                "Логойск": {"type": "coords", "lat": 54.2035, "lon": 27.8520}
-            }
+            # Брест (по названию)
+            brest = get_weather_by_city("Brest")
+            # Логойск (по координатам)
+            logoysk = get_weather_by_coords(54.2035, 27.8520)
             text = "🌅 *Доброе утро!*\n\nПогода сегодня:\n\n"
-            for name, info in cities.items():
-                if info["type"] == "name":
-                    w = get_weather_by_city(info["value"])
-                else:
-                    w = get_weather_by_coords(info["lat"], info["lon"])
-                if w:
-                    text += f"*{name}:*\n{w}\n\n"
-                else:
-                    text += f"*{name}:* ❌ Ошибка\n\n"
+            text += f"*Брест:*\n{brest if brest else '❌ Ошибка'}\n\n"
+            text += f"*Логойск:*\n{logoysk if logoysk else '❌ Ошибка'}"
             try:
                 bot.send_message(CHAT_ID, text, parse_mode='Markdown')
             except Exception as e:
@@ -292,7 +271,7 @@ if __name__ == "__main__":
 
     def run_bot():
         print("🤖 Бот запущен и ждёт сообщений...")
-        bot.remove_webhook()
+        # Убираем remove_webhook, чтобы не вызывать конфликт
         bot.infinity_polling()
 
     threading.Thread(target=run_bot, daemon=True).start()
