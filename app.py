@@ -9,7 +9,7 @@ import requests
 from bs4 import BeautifulSoup
 
 # ============================================
-# НАСТРОЙКИ (задаются через переменные окружения)
+# НАСТРОЙКИ
 # ============================================
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
@@ -17,54 +17,23 @@ if not BOT_TOKEN:
 
 CHAT_ID = -5568949748               # ID твоей группы
 CHECK_INTERVAL = 300                # 5 минут
-CITY_FILTER = "логойск"             # Фильтр по городу (нижний регистр)
+CITY_FILTER = "логойск"             # Фильтр по городу
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
-
-# Множество для хранения уже отправленных объявлений
 sent_offers = set()
 
 # ============================================
-# ФУНКЦИИ ПАРСИНГА (с фильтром по городу)
+# ПАРСИНГ (5 сайтов)
 # ============================================
 
-def parse_kufar():
-    """Парсинг Kufar.by (Минская область, аренда)"""
-    offers = []
-    url = "https://re.kufar.by/l/minsk/snyat/kvartiru"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    try:
-        resp = requests.get(url, headers=headers, timeout=15)
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        # Ищем все ссылки на объявления
-        for a in soup.find_all('a', href=True):
-            href = a['href']
-            if '/l/minsk/snyat/kvartiru/' in href and 'page' not in href:
-                title = a.text.strip()
-                # Проверяем, содержит ли заголовок или ссылка название города
-                if CITY_FILTER in title.lower() or CITY_FILTER in href.lower():
-                    link = "https://re.kufar.by" + href if href.startswith('/') else href
-                    # Попытка найти цену рядом
-                    price_elem = a.find_next('span', class_=re.compile(r'price', re.I))
-                    price = price_elem.text.strip() if price_elem else "Цена не указана"
-                    offer_text = f"🏠 {title[:60]}\n💰 {price}\n🔗 {link}"
-                    offers.append(offer_text)
-                    if len(offers) >= 10:
-                        break
-    except Exception as e:
-        print(f"Ошибка Kufar: {e}")
-    return offers
-
 def parse_onliner():
-    """Парсинг Onliner.by (аренда)"""
     offers = []
     url = "https://r.onliner.by/flats/rent/"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
-        # Ищем блоки объявлений
         for div in soup.find_all('div', class_=lambda c: c and ('offer' in c.lower() or 'form' in c.lower())):
             a = div.find('a')
             if a and a.get('href'):
@@ -84,9 +53,8 @@ def parse_onliner():
     return offers
 
 def parse_realt():
-    """Парсинг Realt.by (аренда)"""
     offers = []
-    url = "https://realt.by/rent/flats/"
+    url = "https://realt.by/rent/flats/logojsk/"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         resp = requests.get(url, headers=headers, timeout=15)
@@ -109,29 +77,122 @@ def parse_realt():
         print(f"Ошибка Realt: {e}")
     return offers
 
+def parse_domovita():
+    offers = []
+    url = "https://domovita.by/rent/logojsk/"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        # Ищем блоки объявлений (общие классы)
+        for div in soup.find_all('div', class_=lambda c: c and ('item' in c.lower() or 'card' in c.lower() or 'offer' in c.lower())):
+            a = div.find('a')
+            if a and a.get('href'):
+                title = a.text.strip()
+                if CITY_FILTER in title.lower():
+                    link = a['href']
+                    if link.startswith('/'):
+                        link = "https://domovita.by" + link
+                    price_elem = div.find('span', class_=re.compile(r'price|cost|руб', re.I))
+                    price = price_elem.text.strip() if price_elem else "Цена не указана"
+                    offer_text = f"🏠 {title[:60]}\n💰 {price}\n🔗 {link}"
+                    offers.append(offer_text)
+                    if len(offers) >= 10:
+                        break
+    except Exception as e:
+        print(f"Ошибка Domovita: {e}")
+    return offers
+
+def parse_neagent():
+    offers = []
+    url = "https://neagent.by/logojsk/rent"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        for div in soup.find_all('div', class_=lambda c: c and ('item' in c.lower() or 'offer' in c.lower() or 'card' in c.lower())):
+            a = div.find('a')
+            if a and a.get('href'):
+                title = a.text.strip()
+                if CITY_FILTER in title.lower():
+                    link = a['href']
+                    if link.startswith('/'):
+                        link = "https://neagent.by" + link
+                    price_elem = div.find('span', class_=re.compile(r'price|cost|руб', re.I))
+                    price = price_elem.text.strip() if price_elem else "Цена не указана"
+                    offer_text = f"🏠 {title[:60]}\n💰 {price}\n🔗 {link}"
+                    offers.append(offer_text)
+                    if len(offers) >= 10:
+                        break
+    except Exception as e:
+        print(f"Ошибка Neagent: {e}")
+    return offers
+
+def parse_khata():
+    offers = []
+    url = "https://khata.by/logojsk/rent"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        for div in soup.find_all('div', class_=lambda c: c and ('item' in c.lower() or 'offer' in c.lower() or 'card' in c.lower())):
+            a = div.find('a')
+            if a and a.get('href'):
+                title = a.text.strip()
+                if CITY_FILTER in title.lower():
+                    link = a['href']
+                    if link.startswith('/'):
+                        link = "https://khata.by" + link
+                    price_elem = div.find('span', class_=re.compile(r'price|cost|руб', re.I))
+                    price = price_elem.text.strip() if price_elem else "Цена не указана"
+                    offer_text = f"🏠 {title[:60]}\n💰 {price}\n🔗 {link}"
+                    offers.append(offer_text)
+                    if len(offers) >= 10:
+                        break
+    except Exception as e:
+        print(f"Ошибка Khata: {e}")
+    return offers
+
 # ============================================
-# СБОР ВСЕХ ОБЪЯВЛЕНИЙ
+# СБОР ВСЕХ ОБЪЯВЛЕНИЙ (5 сайтов)
 # ============================================
 def get_all_offers():
-    """Собирает объявления со всех сайтов и возвращает список строк"""
     all_offers = []
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] Парсинг (Логойск, долгосрочная аренда)...")
-    all_offers.extend(parse_kufar())
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] Парсинг (Логойск)...")
     all_offers.extend(parse_onliner())
     all_offers.extend(parse_realt())
+    all_offers.extend(parse_domovita())
+    all_offers.extend(parse_neagent())
+    all_offers.extend(parse_khata())
     print(f"  Найдено объявлений: {len(all_offers)}")
     return all_offers
 
 # ============================================
-# ФУНКЦИЯ МОНИТОРИНГА (запускается в фоновом потоке)
+# ПРИНУДИТЕЛЬНАЯ ПРОВЕРКА
+# ============================================
+def force_check():
+    global sent_offers
+    try:
+        current = set(get_all_offers())
+        new = current - sent_offers
+        if new:
+            for offer in new:
+                bot.send_message(CHAT_ID, f"🔔 НОВОЕ ОБЪЯВЛЕНИЕ!\n\n{offer}")
+                time.sleep(1)
+            sent_offers = current
+            bot.send_message(CHAT_ID, f"✅ Найдено и отправлено {len(new)} новых объявлений.")
+        else:
+            bot.send_message(CHAT_ID, "Новых объявлений нет.")
+    except Exception as e:
+        bot.send_message(CHAT_ID, f"❌ Ошибка при проверке: {e}")
+
+# ============================================
+# МОНИТОРИНГ
 # ============================================
 def monitor_loop():
-    """Бесконечный цикл проверки новых объявлений"""
     global sent_offers
-    # Первоначальное заполнение – чтобы не слать старые
     sent_offers = set(get_all_offers())
     print(f"✅ Инициализация: отслеживается {len(sent_offers)} объявлений")
-
     while True:
         try:
             current = set(get_all_offers())
@@ -150,28 +211,43 @@ def monitor_loop():
                 print("Новых объявлений нет")
         except Exception as e:
             print(f"Ошибка в мониторинге: {e}")
-
         print(f"⏳ Следующая проверка через {CHECK_INTERVAL} секунд...")
         print("-" * 40)
         time.sleep(CHECK_INTERVAL)
 
 # ============================================
-# ОБРАБОТЧИКИ КОМАНД ТЕЛЕГРАМ
+# КОМАНДЫ
 # ============================================
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
-    bot.reply_to(message, "🤖 Бот для поиска аренды в Логойске запущен!\nОтслеживаю Kufar, Onliner, Realt.\nКоманда /stats – статистика.")
+    bot.reply_to(message,
+        "🤖 Бот для поиска аренды в Логойске запущен!\n"
+        "Отслеживаю Onliner, Realt, Domovita, Neagent, Khata.\n"
+        "Команды:\n/stats – статистика\n/help – помощь\n/update – принудительная проверка")
 
 @bot.message_handler(commands=['stats'])
 def cmd_stats(message):
-    bot.reply_to(message, f"📊 Отслеживается объявлений: {len(sent_offers)}\n🔄 Интервал проверки: {CHECK_INTERVAL} сек")
+    bot.reply_to(message,
+        f"📊 Отслеживается объявлений: {len(sent_offers)}\n"
+        f"🔄 Интервал проверки: {CHECK_INTERVAL} сек")
+
+@bot.message_handler(commands=['help'])
+def cmd_help(message):
+    bot.reply_to(message,
+        "📌 Доступные команды:\n"
+        "/start – запуск\n/stats – статистика\n/help – помощь\n/update – принудительная проверка")
+
+@bot.message_handler(commands=['update'])
+def cmd_update(message):
+    bot.reply_to(message, "🔄 Запускаю ручную проверку...")
+    threading.Thread(target=force_check).start()
 
 # ============================================
-# FLASK – ДЛЯ UPTIMEROBOT (ПИНГ)
+# FLASK
 # ============================================
 @app.route('/')
 def index():
-    return "🤖 Бот для аренды в Логойске работает!"
+    return "🤖 Бот для аренды в Логойске работает (5 сайтов)!"
 
 @app.route('/health')
 def health():
@@ -185,22 +261,19 @@ if __name__ == "__main__":
     print("🤖 БОТ АРЕНДА ЛОГОЙСК (5 САЙТОВ)")
     print("=" * 50)
 
-    # Удаляем вебхук на случай, если он остался
     bot.delete_webhook()
     print("✅ Вебхук удален")
 
-    # Запускаем мониторинг в фоновом потоке
     monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
     monitor_thread.start()
 
-    # Запускаем polling для обработки команд в отдельном потоке
     def start_polling():
         print("🚀 Бот запущен и слушает команды")
         bot.infinity_polling()
+
     polling_thread = threading.Thread(target=start_polling, daemon=True)
     polling_thread.start()
 
-    # Запускаем Flask-сервер
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Запуск веб-сервера на порту {port}...")
     app.run(host="0.0.0.0", port=port)
