@@ -1,6 +1,6 @@
 import os
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 from flask import Flask, request
 import requests
 from bs4 import BeautifulSoup
@@ -17,13 +17,15 @@ CHECK_INTERVAL = 300
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
+
+# Глобальные переменные
 sent_offers = set()
+offers_lock = threading.Lock()  # Для безопасного доступа из разных потоков
 
 # ============================================
-# КЛАВИАТУРА (ГЛАВНОЕ МЕНЮ)
+# КЛАВИАТУРА
 # ============================================
 def main_keyboard():
-    """Главная клавиатура с кнопками"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     keyboard.add(
         KeyboardButton("📋 Показать объявления"),
@@ -36,7 +38,7 @@ def main_keyboard():
     return keyboard
 
 # ============================================
-# ПРОВЕРКА - ТОЛЬКО ЛОГОЙСК
+# ПРОВЕРКА ЛОГОЙСКА
 # ============================================
 def is_logoysk(text):
     text_lower = text.lower()
@@ -238,8 +240,9 @@ def monitor_offers():
     global sent_offers
     print("🔄 Мониторинг запущен (только Логойск)...")
     
-    sent_offers = set(get_all_offers())
-    print(f"✅ Отслеживается {len(sent_offers)} объявлений")
+    with offers_lock:
+        sent_offers = set(get_all_offers())
+        print(f"✅ Отслеживается {len(sent_offers)} объявлений")
     
     if sent_offers:
         try:
@@ -252,8 +255,9 @@ def monitor_offers():
     
     while True:
         try:
-            current_offers = set(get_all_offers())
-            new_offers = current_offers - sent_offers
+            with offers_lock:
+                current_offers = set(get_all_offers())
+                new_offers = current_offers - sent_offers
             
             if new_offers:
                 print(f"🔔 НОВЫХ: {len(new_offers)}")
@@ -261,7 +265,8 @@ def monitor_offers():
                 for offer in new_offers:
                     bot.send_message(CHAT_ID, f"🔔 НОВОЕ ОБЪЯВЛЕНИЕ!\n\n{offer}")
                     time.sleep(1)
-                sent_offers = current_offers
+                with offers_lock:
+                    sent_offers = current_offers
             else:
                 print("Новых объявлений нет")
         except Exception as e:
@@ -273,7 +278,6 @@ def monitor_offers():
 # КОМАНДЫ И КНОПКИ
 # ============================================
 
-# Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     bot.send_message(
@@ -289,13 +293,14 @@ def start_cmd(message):
         parse_mode='Markdown'
     )
 
-# Обработчик команды /stats
 @bot.message_handler(commands=['stats'])
 def stats_cmd(message):
+    with offers_lock:
+        count = len(sent_offers)
     bot.send_message(
         message.chat.id,
         f"📊 *СТАТИСТИКА*\n\n"
-        f"• Отслеживается: *{len(sent_offers)}* объявлений\n"
+        f"• Отслеживается: *{count}* объявлений\n"
         f"• Интервал: *{CHECK_INTERVAL} сек* (5 мин)\n"
         f"• Сайтов: *6*\n"
         f"• Фильтр: *Только Логойск*\n"
@@ -303,19 +308,20 @@ def stats_cmd(message):
         parse_mode='Markdown'
     )
 
-# Обработчик текстовых сообщений (кнопки)
 @bot.message_handler(func=lambda message: True)
 def handle_buttons(message):
     text = message.text
     
     if text == "📋 Показать объявления":
-        if sent_offers:
-            bot.send_message(message.chat.id, f"📋 *ТЕКУЩИЕ ОБЪЯВЛЕНИЯ ({len(sent_offers)} шт.)*", parse_mode='Markdown')
-            for offer in list(sent_offers)[:10]:
+        with offers_lock:
+            current_offers = list(sent_offers)
+        if current_offers:
+            bot.send_message(message.chat.id, f"📋 *ТЕКУЩИЕ ОБЪЯВЛЕНИЯ ({len(current_offers)} шт.)*", parse_mode='Markdown')
+            for offer in current_offers[:10]:
                 bot.send_message(message.chat.id, offer)
                 time.sleep(0.3)
-            if len(sent_offers) > 10:
-                bot.send_message(message.chat.id, f"... и еще {len(sent_offers) - 10} объявлений")
+            if len(current_offers) > 10:
+                bot.send_message(message.chat.id, f"... и еще {len(current_offers) - 10} объявлений")
         else:
             bot.send_message(message.chat.id, "😕 Пока нет объявлений в Логойске")
     
@@ -324,11 +330,13 @@ def handle_buttons(message):
     
     elif text == "🔄 Обновить":
         bot.send_message(message.chat.id, "🔄 Обновляю объявления...")
-        global sent_offers
-        sent_offers = set(get_all_offers())
+        with offers_lock:
+            global sent_offers
+            sent_offers = set(get_all_offers())
+            count = len(sent_offers)
         bot.send_message(
             message.chat.id,
-            f"✅ Обновлено! Отслеживается *{len(sent_offers)}* объявлений",
+            f"✅ Обновлено! Отслеживается *{count}* объявлений",
             parse_mode='Markdown'
         )
     
@@ -348,7 +356,6 @@ def handle_buttons(message):
         )
     
     else:
-        # Если написали что-то другое
         bot.send_message(
             message.chat.id,
             "🤔 Используй кнопки ниже 👇",
