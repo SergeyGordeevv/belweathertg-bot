@@ -308,8 +308,14 @@ def stats_cmd(message):
         parse_mode='Markdown'
     )
 
+# ============================================
+# ГЛАВНЫЙ ОБРАБОТЧИК КНОПОК (С ИСПРАВЛЕНИЕМ)
+# ============================================
 @bot.message_handler(func=lambda message: True)
 def handle_buttons(message):
+    # !!! ПРАВИЛЬНОЕ МЕСТО ДЛЯ global !!!
+    global sent_offers
+
     text = message.text
     
     if text == "📋 Показать объявления":
@@ -331,7 +337,6 @@ def handle_buttons(message):
     elif text == "🔄 Обновить":
         bot.send_message(message.chat.id, "🔄 Обновляю объявления...")
         with offers_lock:
-            global sent_offers
             sent_offers = set(get_all_offers())
             count = len(sent_offers)
         bot.send_message(
