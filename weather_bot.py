@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # === ТВОИ ДАННЫЕ ===
-BOT_TOKEN = "8896032923:AAEknV_8BncvHKO_555q41qwTUwNEW75sYM"
+BOT_TOKEN = "8896032923:AAG2iABXbLJOW9PEhnBluChgf60IoWeZvPk"
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
 CHAT_ID = -1003811989111
 
