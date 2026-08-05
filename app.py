@@ -7,9 +7,6 @@ import time
 import threading
 from datetime import datetime
 
-# ============================================
-# НАСТРОЙКИ
-# ============================================
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = -5568949748
 CHECK_INTERVAL = 300
@@ -19,27 +16,44 @@ app = Flask(__name__)
 sent_offers = set()
 
 # ============================================
-# ПАРСИНГ (только Realt для теста)
+# ПАРСИНГ (С ОБРАБОТКОЙ ОШИБОК)
 # ============================================
+
+def safe_request(url):
+    """Безопасный запрос с обработкой ошибок"""
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code == 200:
+            return r
+        else:
+            print(f"  Статус {r.status_code} для {url}")
+            return None
+    except Exception as e:
+        print(f"  Ошибка запроса: {e}")
+        return None
+
 def parse_realt():
     offers = []
     url = "https://realt.by/rent/flats/"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    r = safe_request(url)
+    if not r:
+        return offers
+    
     try:
-        r = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(r.text, 'html.parser')
         for div in soup.find_all('div', class_=lambda x: x and ('item' in x.lower() or 'offer' in x.lower())):
             a = div.find('a')
             if a and a.get('href'):
                 txt = a.text.strip()
                 link = "https://realt.by" + a['href'] if a['href'].startswith('/') else a['href']
-                if txt:
+                if txt and len(txt) > 5:
                     offer_text = f"🏠 {txt[:50]}\n🔗 {link}"
                     offers.append(offer_text)
                 if len(offers) >= 10:
                     break
     except Exception as e:
-        print(f"Ошибка Realt: {e}")
+        print(f"  Ошибка парсинга Realt: {e}")
     return offers
 
 def get_all_offers():
@@ -49,6 +63,7 @@ def get_all_offers():
     offers = parse_realt()
     all_offers.extend(offers)
     print(f"  Realt: {len(offers)}")
+    
     print(f"  Всего: {len(all_offers)}")
     return all_offers
 
@@ -63,10 +78,13 @@ def monitor_offers():
     print(f"✅ Отслеживается {len(sent_offers)} объявлений")
     
     if sent_offers:
-        bot.send_message(CHAT_ID, f"📋 ТЕКУЩИЕ ОБЪЯВЛЕНИЯ ({len(sent_offers)} шт.)")
-        for offer in list(sent_offers)[:10]:
-            bot.send_message(CHAT_ID, offer)
-            time.sleep(0.5)
+        try:
+            bot.send_message(CHAT_ID, f"📋 ТЕКУЩИЕ ОБЪЯВЛЕНИЯ ({len(sent_offers)} шт.)")
+            for offer in list(sent_offers)[:10]:
+                bot.send_message(CHAT_ID, offer)
+                time.sleep(0.5)
+        except Exception as e:
+            print(f"Ошибка отправки: {e}")
     
     while True:
         try:
@@ -78,7 +96,6 @@ def monitor_offers():
                 bot.send_message(CHAT_ID, f"🔔 НОВЫЕ ОБЪЯВЛЕНИЯ ({len(new_offers)} шт.)")
                 for offer in new_offers:
                     bot.send_message(CHAT_ID, f"🔔 НОВОЕ ОБЪЯВЛЕНИЕ!\n\n{offer}")
-                    print("  ✅ Отправлено")
                     time.sleep(1)
                 sent_offers = current_offers
             else:
@@ -123,12 +140,10 @@ def health():
 # ============================================
 if __name__ == '__main__':
     print("=" * 50)
-    print("🤖 БОТ (ТЕСТОВАЯ ВЕРСИЯ)")
+    print("🤖 БОТ (РАБОЧАЯ ВЕРСИЯ)")
     print("=" * 50)
     
-    monitor_thread = threading.Thread(target=monitor_offers, daemon=True)
-    monitor_thread.start()
-    
+    threading.Thread(target=monitor_offers, daemon=True).start()
     bot.remove_webhook()
     print("✅ Вебхук удален")
     
