@@ -7,13 +7,14 @@ from flask import Flask
 from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# === НАСТРОЙКИ ===
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
-CHAT_ID = -1003811989111   # 👈 СЮДА ВСТАВЬ ID ГРУППЫ (с минусом)
+# === ТВОИ ДАННЫЕ (вставлены напрямую) ===
+BOT_TOKEN = "8896032923:AAEknV_8BncvHKO_555q41qwTUwNEW75sYM"
+WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")  # этот ключ оставь в переменной окружения
+CHAT_ID = -1003811989111  # ID твоей группы
 
-if not BOT_TOKEN or not WEATHER_API_KEY:
-    raise ValueError("Не заданы BOT_TOKEN или WEATHER_API_KEY!")
+# Проверка, что ключ погоды задан
+if not WEATHER_API_KEY:
+    raise ValueError("Не задан WEATHER_API_KEY! Добавь его в переменные окружения Render.")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
@@ -174,11 +175,19 @@ if __name__ == "__main__":
     print("=" * 40)
     print("🌤️ ПОГОДНЫЙ БОТ ЗАПУЩЕН")
     print("=" * 40)
+
+    # Запускаем утреннюю рассылку в фоне
     threading.Thread(target=morning_broadcast, daemon=True).start()
+
+    # Запускаем бота с принудительным сбросом вебхука
     def run_bot():
         print("🤖 Бот запущен и ждёт сообщений...")
+        bot.remove_webhook()  # сбрасываем вебхук, чтобы избежать 409
         bot.infinity_polling()
+
     threading.Thread(target=run_bot, daemon=True).start()
+
+    # Веб-сервер
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Веб-сервер на порту {port}")
     app.run(host="0.0.0.0", port=port)
