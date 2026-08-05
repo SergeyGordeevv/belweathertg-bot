@@ -15,16 +15,17 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("Переменная TELEGRAM_BOT_TOKEN не установлена!")
 
-CHAT_ID = -5568949748               # ID твоей группы
-CHECK_INTERVAL = 300                # 5 минут
-CITY_FILTER = "логойск"             # Фильтр по городу
+CHAT_ID = -5568949748
+CHECK_INTERVAL = 300
+CITY_FILTER = "логойск"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 sent_offers = set()
+polling_running = True
 
 # ============================================
-# ПАРСИНГ (5 сайтов)
+# ПАРСИНГ САЙТОВ
 # ============================================
 
 def parse_onliner():
@@ -84,8 +85,8 @@ def parse_domovita():
     try:
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
-        # Ищем блоки объявлений (общие классы)
-        for div in soup.find_all('div', class_=lambda c: c and ('item' in c.lower() or 'card' in c.lower() or 'offer' in c.lower())):
+        # Ищем карточки объявлений (актуальные классы нужно уточнить)
+        for div in soup.find_all('div', class_=lambda c: c and ('item' in c.lower() or 'card' in c.lower())):
             a = div.find('a')
             if a and a.get('href'):
                 title = a.text.strip()
@@ -93,7 +94,7 @@ def parse_domovita():
                     link = a['href']
                     if link.startswith('/'):
                         link = "https://domovita.by" + link
-                    price_elem = div.find('span', class_=re.compile(r'price|cost|руб', re.I))
+                    price_elem = div.find('span', class_=re.compile(r'price', re.I))
                     price = price_elem.text.strip() if price_elem else "Цена не указана"
                     offer_text = f"🏠 {title[:60]}\n💰 {price}\n🔗 {link}"
                     offers.append(offer_text)
@@ -110,7 +111,7 @@ def parse_neagent():
     try:
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
-        for div in soup.find_all('div', class_=lambda c: c and ('item' in c.lower() or 'offer' in c.lower() or 'card' in c.lower())):
+        for div in soup.find_all('div', class_=lambda c: c and ('item' in c.lower() or 'offer' in c.lower())):
             a = div.find('a')
             if a and a.get('href'):
                 title = a.text.strip()
@@ -118,7 +119,7 @@ def parse_neagent():
                     link = a['href']
                     if link.startswith('/'):
                         link = "https://neagent.by" + link
-                    price_elem = div.find('span', class_=re.compile(r'price|cost|руб', re.I))
+                    price_elem = div.find('span', class_=re.compile(r'price', re.I))
                     price = price_elem.text.strip() if price_elem else "Цена не указана"
                     offer_text = f"🏠 {title[:60]}\n💰 {price}\n🔗 {link}"
                     offers.append(offer_text)
@@ -135,7 +136,7 @@ def parse_khata():
     try:
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
-        for div in soup.find_all('div', class_=lambda c: c and ('item' in c.lower() or 'offer' in c.lower() or 'card' in c.lower())):
+        for div in soup.find_all('div', class_=lambda c: c and ('item' in c.lower() or 'offer' in c.lower())):
             a = div.find('a')
             if a and a.get('href'):
                 title = a.text.strip()
@@ -143,7 +144,7 @@ def parse_khata():
                     link = a['href']
                     if link.startswith('/'):
                         link = "https://khata.by" + link
-                    price_elem = div.find('span', class_=re.compile(r'price|cost|руб', re.I))
+                    price_elem = div.find('span', class_=re.compile(r'price', re.I))
                     price = price_elem.text.strip() if price_elem else "Цена не указана"
                     offer_text = f"🏠 {title[:60]}\n💰 {price}\n🔗 {link}"
                     offers.append(offer_text)
@@ -154,7 +155,7 @@ def parse_khata():
     return offers
 
 # ============================================
-# СБОР ВСЕХ ОБЪЯВЛЕНИЙ (5 сайтов)
+# СБОР ВСЕХ ОБЪЯВЛЕНИЙ
 # ============================================
 def get_all_offers():
     all_offers = []
@@ -164,7 +165,7 @@ def get_all_offers():
     all_offers.extend(parse_domovita())
     all_offers.extend(parse_neagent())
     all_offers.extend(parse_khata())
-    print(f"  Найдено объявлений: {len(all_offers)}")
+    print(f"  Найдено: {len(all_offers)}")
     return all_offers
 
 # ============================================
@@ -180,11 +181,11 @@ def force_check():
                 bot.send_message(CHAT_ID, f"🔔 НОВОЕ ОБЪЯВЛЕНИЕ!\n\n{offer}")
                 time.sleep(1)
             sent_offers = current
-            bot.send_message(CHAT_ID, f"✅ Найдено и отправлено {len(new)} новых объявлений.")
+            bot.send_message(CHAT_ID, f"✅ Отправлено {len(new)} новых объявлений.")
         else:
             bot.send_message(CHAT_ID, "Новых объявлений нет.")
     except Exception as e:
-        bot.send_message(CHAT_ID, f"❌ Ошибка при проверке: {e}")
+        bot.send_message(CHAT_ID, f"❌ Ошибка: {e}")
 
 # ============================================
 # МОНИТОРИНГ
@@ -192,28 +193,48 @@ def force_check():
 def monitor_loop():
     global sent_offers
     sent_offers = set(get_all_offers())
-    print(f"✅ Инициализация: отслеживается {len(sent_offers)} объявлений")
+    print(f"✅ Отслеживается {len(sent_offers)} объявлений")
     while True:
         try:
             current = set(get_all_offers())
             new = current - sent_offers
             if new:
-                print(f"🔔 Найдено {len(new)} новых объявлений!")
+                print(f"🔔 Найдено {len(new)} новых!")
                 for offer in new:
                     try:
                         bot.send_message(CHAT_ID, f"🔔 НОВОЕ ОБЪЯВЛЕНИЕ!\n\n{offer}")
-                        print("  ✅ Отправлено")
                         time.sleep(1)
                     except Exception as e:
-                        print(f"  ❌ Ошибка отправки: {e}")
+                        print(f"Ошибка отправки: {e}")
                 sent_offers = current
             else:
-                print("Новых объявлений нет")
+                print("Новых нет")
         except Exception as e:
-            print(f"Ошибка в мониторинге: {e}")
-        print(f"⏳ Следующая проверка через {CHECK_INTERVAL} секунд...")
-        print("-" * 40)
+            print(f"Ошибка мониторинга: {e}")
         time.sleep(CHECK_INTERVAL)
+
+# ============================================
+# ЗАПУСК POLLING С ПЕРЕЗАПУСКОМ ПРИ 409
+# ============================================
+def start_polling_with_retry():
+    """Запускает polling и перезапускает его при ошибке 409"""
+    global polling_running
+    while polling_running:
+        try:
+            print("🚀 Бот запущен и слушает команды")
+            bot.infinity_polling(timeout=30, long_polling_timeout=20)
+        except Exception as e:
+            if "409" in str(e) or "Conflict" in str(e):
+                print("⚠️ Ошибка 409: перезапускаю polling через 5 секунд...")
+                time.sleep(5)
+                # Сбрасываем вебхук перед перезапуском
+                try:
+                    bot.delete_webhook()
+                except:
+                    pass
+            else:
+                print(f"❌ Ошибка polling: {e}")
+                time.sleep(5)
 
 # ============================================
 # КОМАНДЫ
@@ -221,25 +242,25 @@ def monitor_loop():
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
     bot.reply_to(message,
-        "🤖 Бот для поиска аренды в Логойске запущен!\n"
-        "Отслеживаю Onliner, Realt, Domovita, Neagent, Khata.\n"
-        "Команды:\n/stats – статистика\n/help – помощь\n/update – принудительная проверка")
+        "🤖 Бот для аренды в Логойске запущен!\n"
+        "Отслеживаю: Onliner, Realt, Domovita, Neagent, Khata\n"
+        "/stats – статистика\n/help – помощь\n/update – проверка")
 
 @bot.message_handler(commands=['stats'])
 def cmd_stats(message):
     bot.reply_to(message,
-        f"📊 Отслеживается объявлений: {len(sent_offers)}\n"
-        f"🔄 Интервал проверки: {CHECK_INTERVAL} сек")
+        f"📊 Отслеживается: {len(sent_offers)}\n"
+        f"⏱ Интервал: {CHECK_INTERVAL} сек")
 
 @bot.message_handler(commands=['help'])
 def cmd_help(message):
     bot.reply_to(message,
-        "📌 Доступные команды:\n"
-        "/start – запуск\n/stats – статистика\n/help – помощь\n/update – принудительная проверка")
+        "📌 Команды:\n/start – запуск\n/stats – статистика\n"
+        "/help – справка\n/update – принудительная проверка")
 
 @bot.message_handler(commands=['update'])
 def cmd_update(message):
-    bot.reply_to(message, "🔄 Запускаю ручную проверку...")
+    bot.reply_to(message, "🔄 Проверка...")
     threading.Thread(target=force_check).start()
 
 # ============================================
@@ -247,7 +268,7 @@ def cmd_update(message):
 # ============================================
 @app.route('/')
 def index():
-    return "🤖 Бот для аренды в Логойске работает (5 сайтов)!"
+    return "🤖 Бот для аренды в Логойске работает!"
 
 @app.route('/health')
 def health():
@@ -261,19 +282,21 @@ if __name__ == "__main__":
     print("🤖 БОТ АРЕНДА ЛОГОЙСК (5 САЙТОВ)")
     print("=" * 50)
 
-    bot.delete_webhook()
-    print("✅ Вебхук удален")
+    # Удаляем вебхук
+    try:
+        bot.delete_webhook()
+        print("✅ Вебхук удален")
+    except:
+        print("⚠️ Не удалось удалить вебхук")
 
-    monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
-    monitor_thread.start()
+    # Мониторинг в фоне
+    threading.Thread(target=monitor_loop, daemon=True).start()
 
-    def start_polling():
-        print("🚀 Бот запущен и слушает команды")
-        bot.infinity_polling()
-
-    polling_thread = threading.Thread(target=start_polling, daemon=True)
+    # Polling с обработкой 409
+    polling_thread = threading.Thread(target=start_polling_with_retry, daemon=True)
     polling_thread.start()
 
+    # Flask
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Запуск веб-сервера на порту {port}...")
     app.run(host="0.0.0.0", port=port)
