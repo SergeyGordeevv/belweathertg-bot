@@ -5,7 +5,7 @@ import time
 import threading
 from flask import Flask
 from datetime import datetime, timedelta
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
 # === ТВОИ ДАННЫЕ ===
 BOT_TOKEN = "8896032923:AAEknV_8BncvHKO_555q41qwTUwNEW75sYM"
@@ -13,15 +13,15 @@ WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
 CHAT_ID = -1003811989111
 
 if not WEATHER_API_KEY:
-    raise ValueError("Не задан WEATHER_API_KEY! Добавь его в переменные окружения Render.")
+    raise ValueError("Не задан WEATHER_API_KEY! Добавь в переменные окружения Render.")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
 # === ГЛОБАЛЬНАЯ ПЕРЕМЕННАЯ ДЛЯ ПОСЛЕДНЕГО ГОРОДА ===
-last_city = "Brest"  # по умолчанию Брест
+last_city = "Brest"
 
-# === ФУНКЦИИ ПОГОДЫ (без изменений) ===
+# === ФУНКЦИИ ПОГОДЫ ===
 def get_weather(city):
     url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
@@ -76,99 +76,135 @@ def get_daily_forecast(city, days=3):
     except:
         return None
 
-# === КНОПКИ (обновлены) ===
-def weather_buttons():
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    btn1 = InlineKeyboardButton("🌤️ Сегодня", callback_data='today')
-    btn2 = InlineKeyboardButton("🌥️ Завтра", callback_data='tomorrow')
-    btn3 = InlineKeyboardButton("📅 3 дня", callback_data='3days')
-    btn4 = InlineKeyboardButton("🏠 Брест+Логойск", callback_data='both')
+# === КЛАВИАТУРА С КНОПКАМИ (reply) ===
+def get_main_keyboard():
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
+    btn1 = KeyboardButton("🌤️ Брест")
+    btn2 = KeyboardButton("🌤️ Логойск")
+    btn3 = KeyboardButton("🌤️ Минск")
+    btn4 = KeyboardButton("🌤️ Гродно")
+    btn5 = KeyboardButton("📅 Сегодня")
+    btn6 = KeyboardButton("📅 Завтра")
+    btn7 = KeyboardButton("📅 3 дня")
+    btn8 = KeyboardButton("🏠 Оба города")
     keyboard.add(btn1, btn2, btn3, btn4)
+    keyboard.add(btn5, btn6, btn7)
+    keyboard.add(btn8)
     return keyboard
 
-# === КОМАНДЫ ===
+# === КОМАНДА /start ===
 @bot.message_handler(commands=['start'])
 def start(message):
     bot.reply_to(
         message,
         "🌤️ *Погодный бот для всей семьи!*\n\n"
-        "Просто напиши *название любого города* — я покажу погоду.\n"
-        "А кнопки покажут прогноз на сегодня, завтра или 3 дня для последнего города.\n\n"
-        "Кнопка «Брест+Логойск» всегда покажет оба города.",
+        "Нажимай кнопки снизу — и я покажу погоду.\n"
+        "• Кнопки городов — текущая погода\n"
+        "• «Сегодня», «Завтра», «3 дня» — прогноз для последнего города\n"
+        "• «Оба города» — Брест и Логойск вместе\n\n"
+        "Можешь также написать название любого города вручную.",
         parse_mode='Markdown',
-        reply_markup=weather_buttons()
+        reply_markup=get_main_keyboard()
     )
 
-@bot.message_handler(commands=['weather'])
-def weather_cmd(message):
-    bot.reply_to(message, "Напиши название города:", reply_markup=weather_buttons())
-
-# === ОБРАБОТКА ЛЮБОГО ТЕКСТА (НАЗВАНИЕ ГОРОДА) ===
+# === ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ ===
 @bot.message_handler(func=lambda message: True)
-def any_message(message):
+def handle_message(message):
     global last_city
-    city = message.text.strip()
-    # Проверяем, не команда ли это (чтобы не перехватывать /start и т.д.)
-    if city.startswith('/'):
-        return
-    # Попробуем получить погоду для введённого города
-    w = get_weather(city)
-    if w:
-        last_city = city  # запоминаем город
-        # Пытаемся получить красивое название на русском (если город на латинице)
-        # Но можно оставить как есть
-        bot.reply_to(
-            message,
-            f"🌍 *{city.capitalize()}* сейчас:\n{w}",
-            parse_mode='Markdown',
-            reply_markup=weather_buttons()
-        )
-    else:
-        # Если город не найден, предложим помощь
-        bot.reply_to(
-            message,
-            f"❌ Город '{city}' не найден. Проверь написание или попробуй на латинице (например, Minsk, Brest, Grodno).",
-            reply_markup=weather_buttons()
-        )
+    text = message.text.strip()
 
-# === ОБРАБОТКА НАЖАТИЙ НА КНОПКИ ===
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    global last_city
-    if call.data == 'today':
-        w = get_weather(last_city)
+    # ----- КНОПКИ ГОРОДОВ -----
+    if text in ["🌤️ Брест", "Брест"]:
+        last_city = "Brest"
+        w = get_weather("Brest")
         if w:
-            text = f"🌤️ *Погода в {last_city.capitalize()} сегодня:*\n\n{w}"
+            bot.reply_to(message, f"🌍 *Брест* сейчас:\n{w}", parse_mode='Markdown', reply_markup=get_main_keyboard())
         else:
-            text = f"❌ Не удалось получить погоду для {last_city.capitalize()}."
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    elif call.data == 'tomorrow':
-        f = get_forecast(last_city, 1)
-        if f:
-            text = f"🌥️ *Прогноз в {last_city.capitalize()} на завтра:*\n\n{f}"
+            bot.reply_to(message, "❌ Не удалось получить погоду для Бреста.", reply_markup=get_main_keyboard())
+
+    elif text in ["🌤️ Логойск", "Логойск"]:
+        last_city = "Lahojsk,BY"
+        w = get_weather("Lahojsk,BY")
+        if w:
+            bot.reply_to(message, f"🌍 *Логойск* сейчас:\n{w}", parse_mode='Markdown', reply_markup=get_main_keyboard())
         else:
-            text = f"❌ Нет данных для {last_city.capitalize()}."
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    elif call.data == '3days':
-        f = get_daily_forecast(last_city, 3)
-        if f:
-            text = f"📅 *Прогноз в {last_city.capitalize()} на 3 дня:*\n\n{f}"
+            bot.reply_to(message, "❌ Не удалось получить погоду для Логойска.", reply_markup=get_main_keyboard())
+
+    elif text in ["🌤️ Минск", "Минск"]:
+        last_city = "Minsk"
+        w = get_weather("Minsk")
+        if w:
+            bot.reply_to(message, f"🌍 *Минск* сейчас:\n{w}", parse_mode='Markdown', reply_markup=get_main_keyboard())
         else:
-            text = f"❌ Нет данных для {last_city.capitalize()}."
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    elif call.data == 'both':
+            bot.reply_to(message, "❌ Не удалось получить погоду для Минска.", reply_markup=get_main_keyboard())
+
+    elif text in ["🌤️ Гродно", "Гродно"]:
+        last_city = "Grodno"
+        w = get_weather("Grodno")
+        if w:
+            bot.reply_to(message, f"🌍 *Гродно* сейчас:\n{w}", parse_mode='Markdown', reply_markup=get_main_keyboard())
+        else:
+            bot.reply_to(message, "❌ Не удалось получить погоду для Гродно.", reply_markup=get_main_keyboard())
+
+    # ----- КНОПКИ ПРОГНОЗА -----
+    elif text in ["📅 Сегодня", "Сегодня"]:
+        if last_city:
+            w = get_weather(last_city)
+            if w:
+                bot.reply_to(message, f"🌤️ *Погода в {last_city.split(',')[0].capitalize()} сегодня:*\n\n{w}", parse_mode='Markdown', reply_markup=get_main_keyboard())
+            else:
+                bot.reply_to(message, f"❌ Не удалось получить погоду для {last_city}.", reply_markup=get_main_keyboard())
+        else:
+            bot.reply_to(message, "❌ Сначала выбери город.", reply_markup=get_main_keyboard())
+
+    elif text in ["📅 Завтра", "Завтра"]:
+        if last_city:
+            f = get_forecast(last_city, 1)
+            if f:
+                bot.reply_to(message, f"🌥️ *Прогноз в {last_city.split(',')[0].capitalize()} на завтра:*\n\n{f}", parse_mode='Markdown', reply_markup=get_main_keyboard())
+            else:
+                bot.reply_to(message, f"❌ Нет данных для {last_city}.", reply_markup=get_main_keyboard())
+        else:
+            bot.reply_to(message, "❌ Сначала выбери город.", reply_markup=get_main_keyboard())
+
+    elif text in ["📅 3 дня", "3 дня"]:
+        if last_city:
+            f = get_daily_forecast(last_city, 3)
+            if f:
+                bot.reply_to(message, f"📅 *Прогноз в {last_city.split(',')[0].capitalize()} на 3 дня:*\n\n{f}", parse_mode='Markdown', reply_markup=get_main_keyboard())
+            else:
+                bot.reply_to(message, f"❌ Нет данных для {last_city}.", reply_markup=get_main_keyboard())
+        else:
+            bot.reply_to(message, "❌ Сначала выбери город.", reply_markup=get_main_keyboard())
+
+    # ----- КНОПКА "ОБА ГОРОДА" -----
+    elif text in ["🏠 Оба города", "Оба города"]:
         cities = {"Брест": "Brest", "Логойск": "Lahojsk,BY"}
-        text = "🌍 *Сводка по Бресту и Логойску:*\n\n"
+        result = "🌍 *Сводка по Бресту и Логойску:*\n\n"
         for name, eng in cities.items():
             w = get_weather(eng)
             if w:
-                text += f"*{name}:*\n{w}\n\n"
+                result += f"*{name}:*\n{w}\n\n"
             else:
-                text += f"*{name}:* ❌ Ошибка\n\n"
-        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=weather_buttons())
-    bot.answer_callback_query(call.id)
+                result += f"*{name}:* ❌ Ошибка\n\n"
+        bot.reply_to(message, result, parse_mode='Markdown', reply_markup=get_main_keyboard())
 
-# === УТРЕННЯЯ РАССЫЛКА (для Бреста и Логойска) ===
+    # ----- ЛЮБОЙ ДРУГОЙ ТЕКСТ (название города) -----
+    else:
+        # Проверяем, может это город, введённый вручную
+        city = text
+        w = get_weather(city)
+        if w:
+            last_city = city
+            bot.reply_to(message, f"🌍 *{city.capitalize()}* сейчас:\n{w}", parse_mode='Markdown', reply_markup=get_main_keyboard())
+        else:
+            bot.reply_to(
+                message,
+                f"❌ Город '{city}' не найден. Проверь написание или используй кнопки.",
+                reply_markup=get_main_keyboard()
+            )
+
+# === УТРЕННЯЯ РАССЫЛКА (в 6:00) ===
 def morning_broadcast():
     while True:
         now = datetime.now()
