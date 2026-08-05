@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 import time
 import threading
 from datetime import datetime
-import re
 
 # ============================================
 # НАСТРОЙКИ
@@ -41,7 +40,6 @@ def main_keyboard():
 # ФУНКЦИЯ ПРОВЕРКИ (Логойск, не продажа, не посуточно)
 # ============================================
 def is_valid_logoysk(text):
-    """Проверяет, что объявление про Логойск и подходит по условиям"""
     text_lower = text.lower()
     # Должен быть Логойск
     if not any(kw in text_lower for kw in ['логойск', 'logoysk', 'logojsk', 'логойский']):
@@ -52,44 +50,7 @@ def is_valid_logoysk(text):
     return True
 
 # ============================================
-# ПАРСИНГ KUFAR (с фильтром)
-# ============================================
-def parse_kufar():
-    offers = []
-    url = "https://re.kufar.by/l/minsk/snyat/kvartiru"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    try:
-        r = requests.get(url, headers=headers, timeout=15)
-        soup = BeautifulSoup(r.text, 'html.parser')
-        # Ищем все ссылки на объявления
-        for a in soup.find_all('a', href=True):
-            href = a['href']
-            if '/l/minsk/snyat/kvartiru/' in href and 'page' not in href:
-                # Собираем текст вокруг ссылки (родительский элемент)
-                parent = a.parent
-                full_text = a.text.strip()
-                if parent:
-                    full_text += " " + parent.text.strip()
-                # Проверяем фильтр
-                if not is_valid_logoysk(full_text):
-                    continue
-                title = a.text.strip()
-                if len(title) < 5:
-                    continue
-                # Ищем цену
-                price_elem = a.find_next('span', class_=lambda x: x and 'price' in x.lower())
-                price = price_elem.text.strip() if price_elem else "Цена не указана"
-                link = "https://re.kufar.by" + href if href.startswith('/') else href
-                offer_text = f"🏠 {title[:50]}\n💰 {price}\n🔗 {link}"
-                offers.append(offer_text)
-                if len(offers) >= 15:
-                    break
-    except Exception as e:
-        print(f"Ошибка Kufar: {e}")
-    return offers
-
-# ============================================
-# ПАРСИНГ REALT (с фильтром)
+# ПАРСИНГ REALT
 # ============================================
 def parse_realt():
     offers = []
@@ -102,7 +63,6 @@ def parse_realt():
             a = div.find('a')
             if a and a.get('href'):
                 txt = a.text.strip()
-                # Добавляем текст всего div для фильтрации
                 full_text = txt + " " + div.text.strip()
                 if not is_valid_logoysk(full_text):
                     continue
@@ -117,7 +77,7 @@ def parse_realt():
     return offers
 
 # ============================================
-# ПАРСИНГ DOMOVITA (с фильтром)
+# ПАРСИНГ DOMOVITA
 # ============================================
 def parse_domovita():
     offers = []
@@ -144,7 +104,7 @@ def parse_domovita():
     return offers
 
 # ============================================
-# ПАРСИНГ NEAGENT (с фильтром)
+# ПАРСИНГ NEAGENT
 # ============================================
 def parse_neagent():
     offers = []
@@ -171,7 +131,7 @@ def parse_neagent():
     return offers
 
 # ============================================
-# ПАРСИНГ HATA (с фильтром)
+# ПАРСИНГ HATA
 # ============================================
 def parse_hata():
     offers = []
@@ -198,7 +158,7 @@ def parse_hata():
     return offers
 
 # ============================================
-# ПАРСИНГ GDE (с фильтром)
+# ПАРСИНГ GDE
 # ============================================
 def parse_gde():
     offers = []
@@ -232,7 +192,6 @@ def get_all_offers():
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Парсинг (Логойск, долгосрочная аренда)...")
     
     sites = {
-        "Kufar": parse_kufar,
         "Realt": parse_realt,
         "Domovita": parse_domovita,
         "Neagent": parse_neagent,
@@ -319,7 +278,7 @@ def start_cmd(message):
     bot.send_message(
         message.chat.id,
         "🏠 *Бот аренды Логойска*\n\n"
-        "Я ищу объявления об аренде квартир в Логойске на 6 сайтах.\n\n"
+        "Я ищу объявления об аренде квартир в Логойске на 5 сайтах.\n\n"
         "📌 *Что умею:*\n"
         "• Показывать текущие объявления с разбивкой по сайтам\n"
         "• Отслеживать новые каждые 5 минут\n"
@@ -425,7 +384,7 @@ def health():
 # ============================================
 if __name__ == '__main__':
     print("=" * 50)
-    print("🤖 БОТ АРЕНДА ЛОГОЙСК (С ФИЛЬТРОМ)")
+    print("🤖 БОТ АРЕНДА ЛОГОЙСК (5 САЙТОВ)")
     print("=" * 50)
     
     threading.Thread(target=monitor_offers, daemon=True).start()
