@@ -1,5 +1,6 @@
 import os
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from flask import Flask, request
 import requests
 from bs4 import BeautifulSoup
@@ -19,10 +20,25 @@ app = Flask(__name__)
 sent_offers = set()
 
 # ============================================
+# КЛАВИАТУРА (ГЛАВНОЕ МЕНЮ)
+# ============================================
+def main_keyboard():
+    """Главная клавиатура с кнопками"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    keyboard.add(
+        KeyboardButton("📋 Показать объявления"),
+        KeyboardButton("📊 Статистика")
+    )
+    keyboard.add(
+        KeyboardButton("🔄 Обновить"),
+        KeyboardButton("ℹ️ Помощь")
+    )
+    return keyboard
+
+# ============================================
 # ПРОВЕРКА - ТОЛЬКО ЛОГОЙСК
 # ============================================
 def is_logoysk(text):
-    """Проверяет, есть ли в тексте Логойск"""
     text_lower = text.lower()
     keywords = ['логойск', 'logoysk', 'logojsk', 'логойский']
     return any(kw in text_lower for kw in keywords)
@@ -30,7 +46,6 @@ def is_logoysk(text):
 # ============================================
 # ПАРСИНГ 6 САЙТОВ
 # ============================================
-
 def parse_kufar():
     offers = []
     url = "https://re.kufar.by/l/minsk/snyat/kvartiru?m=1"
@@ -255,33 +270,90 @@ def monitor_offers():
         time.sleep(CHECK_INTERVAL)
 
 # ============================================
-# КОМАНДЫ
+# КОМАНДЫ И КНОПКИ
 # ============================================
+
+# Обработчик команды /start
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
-    bot.reply_to(message, 
-        "🤖 Бот для мониторинга АРЕНДЫ в ЛОГОЙСКЕ!\n\n"
-        "🏠 Отслеживает 6 сайтов:\n"
-        "• Kufar.by\n"
-        "• Realt.by\n"
-        "• Domovita.by\n"
-        "• Neagent.by\n"
-        "• Hata.by\n"
-        "• Gde.by\n\n"
-        "🔄 Проверка каждые 5 минут\n"
-        "📊 Статистика: /stats"
+    bot.send_message(
+        message.chat.id,
+        "🏠 *Бот аренды Логойск*\n\n"
+        "Я ищу объявления об аренде квартир в Логойске на 6 сайтах.\n\n"
+        "📌 *Что умею:*\n"
+        "• Показывать текущие объявления\n"
+        "• Отслеживать новые каждые 5 минут\n"
+        "• Присылать уведомления о новых\n\n"
+        "👇 *Используй кнопки ниже:*",
+        reply_markup=main_keyboard(),
+        parse_mode='Markdown'
     )
 
+# Обработчик команды /stats
 @bot.message_handler(commands=['stats'])
 def stats_cmd(message):
-    bot.reply_to(message,
-        f"📊 СТАТИСТИКА\n\n"
-        f"• Отслеживается: {len(sent_offers)} объявлений\n"
-        f"• Интервал: {CHECK_INTERVAL} сек (5 мин)\n"
-        f"• Сайтов: 6\n"
-        f"• Фильтр: Только Логойск\n"
-        f"• Статус: ✅ Активен"
+    bot.send_message(
+        message.chat.id,
+        f"📊 *СТАТИСТИКА*\n\n"
+        f"• Отслеживается: *{len(sent_offers)}* объявлений\n"
+        f"• Интервал: *{CHECK_INTERVAL} сек* (5 мин)\n"
+        f"• Сайтов: *6*\n"
+        f"• Фильтр: *Только Логойск*\n"
+        f"• Статус: *✅ Активен*",
+        parse_mode='Markdown'
     )
+
+# Обработчик текстовых сообщений (кнопки)
+@bot.message_handler(func=lambda message: True)
+def handle_buttons(message):
+    text = message.text
+    
+    if text == "📋 Показать объявления":
+        if sent_offers:
+            bot.send_message(message.chat.id, f"📋 *ТЕКУЩИЕ ОБЪЯВЛЕНИЯ ({len(sent_offers)} шт.)*", parse_mode='Markdown')
+            for offer in list(sent_offers)[:10]:
+                bot.send_message(message.chat.id, offer)
+                time.sleep(0.3)
+            if len(sent_offers) > 10:
+                bot.send_message(message.chat.id, f"... и еще {len(sent_offers) - 10} объявлений")
+        else:
+            bot.send_message(message.chat.id, "😕 Пока нет объявлений в Логойске")
+    
+    elif text == "📊 Статистика":
+        stats_cmd(message)
+    
+    elif text == "🔄 Обновить":
+        bot.send_message(message.chat.id, "🔄 Обновляю объявления...")
+        global sent_offers
+        sent_offers = set(get_all_offers())
+        bot.send_message(
+            message.chat.id,
+            f"✅ Обновлено! Отслеживается *{len(sent_offers)}* объявлений",
+            parse_mode='Markdown'
+        )
+    
+    elif text == "ℹ️ Помощь":
+        bot.send_message(
+            message.chat.id,
+            "ℹ️ *Помощь*\n\n"
+            "📌 *Команды:*\n"
+            "• /start — Главное меню\n"
+            "• /stats — Статистика\n\n"
+            "📌 *Кнопки:*\n"
+            "• Показать объявления — список текущих\n"
+            "• Статистика — количество и статус\n"
+            "• Обновить — принудительно обновить\n\n"
+            "🔄 *Авто-уведомления:* новые объявления приходят сами каждые 5 минут",
+            parse_mode='Markdown'
+        )
+    
+    else:
+        # Если написали что-то другое
+        bot.send_message(
+            message.chat.id,
+            "🤔 Используй кнопки ниже 👇",
+            reply_markup=main_keyboard()
+        )
 
 # ============================================
 # ВЕБХУК
@@ -307,7 +379,7 @@ def health():
 # ============================================
 if __name__ == '__main__':
     print("=" * 50)
-    print("🤖 БОТ АРЕНДА ЛОГОЙСК")
+    print("🤖 БОТ АРЕНДА ЛОГОЙСК (С КНОПКАМИ)")
     print("=" * 50)
     
     threading.Thread(target=monitor_offers, daemon=True).start()
