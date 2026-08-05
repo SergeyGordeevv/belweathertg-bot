@@ -19,17 +19,33 @@ bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
 # === ФУНКЦИИ ПОГОДЫ ===
-def get_weather(city):
-    # Если город "Логойск" — подставляем правильное латинское название
-    if city.lower() == "логойск":
-        city = "Lahojsk,BY"
-    
+def get_weather_by_city(city):
+    """По названию города"""
     url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
         data = r.json()
         if data.get('cod') != 200:
             return None
+        return parse_weather_data(data)
+    except:
+        return None
+
+def get_weather_by_coords(lat, lon):
+    """По координатам (для Логойска)"""
+    url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
+    try:
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        if data.get('cod') != 200:
+            return None
+        return parse_weather_data(data)
+    except:
+        return None
+
+def parse_weather_data(data):
+    """Парсинг общих данных погоды"""
+    try:
         temp = round(data['main']['temp'])
         feels = round(data['main']['feels_like'])
         desc = data['weather'][0]['description'].capitalize()
@@ -39,16 +55,30 @@ def get_weather(city):
     except:
         return None
 
-def get_forecast(city, days=1):
-    if city.lower() == "логойск":
-        city = "Lahojsk,BY"
-    
+def get_forecast_by_city(city, days=1):
     url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
         data = r.json()
         if data.get('cod') != '200':
             return None
+        return parse_forecast_data(data, days)
+    except:
+        return None
+
+def get_forecast_by_coords(lat, lon, days=1):
+    url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
+    try:
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        if data.get('cod') != '200':
+            return None
+        return parse_forecast_data(data, days)
+    except:
+        return None
+
+def parse_forecast_data(data, days=1):
+    try:
         target_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
         for item in data['list']:
             if item['dt_txt'].startswith(target_date):
@@ -59,16 +89,30 @@ def get_forecast(city, days=1):
     except:
         return None
 
-def get_daily_forecast(city, days=3):
-    if city.lower() == "логойск":
-        city = "Lahojsk,BY"
-    
+def get_daily_forecast_by_city(city, days=3):
     url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
         data = r.json()
         if data.get('cod') != '200':
             return None
+        return parse_daily_forecast(data, days)
+    except:
+        return None
+
+def get_daily_forecast_by_coords(lat, lon, days=3):
+    url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
+    try:
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        if data.get('cod') != '200':
+            return None
+        return parse_daily_forecast(data, days)
+    except:
+        return None
+
+def parse_daily_forecast(data, days=3):
+    try:
         result = []
         seen_dates = set()
         for item in data['list']:
@@ -82,6 +126,26 @@ def get_daily_forecast(city, days=3):
         return '\n'.join(result) if result else None
     except:
         return None
+
+# === ОСНОВНАЯ ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ПОГОДЫ (автоматический выбор) ===
+def get_weather_for_city(city_name):
+    # Если это Логойск — используем координаты
+    if city_name.lower() == "логойск":
+        return get_weather_by_coords(54.2035, 27.8520)
+    else:
+        return get_weather_by_city(city_name)
+
+def get_forecast_for_city(city_name, days=1):
+    if city_name.lower() == "логойск":
+        return get_forecast_by_coords(54.2035, 27.8520, days)
+    else:
+        return get_forecast_by_city(city_name, days)
+
+def get_daily_forecast_for_city(city_name, days=3):
+    if city_name.lower() == "логойск":
+        return get_daily_forecast_by_coords(54.2035, 27.8520, days)
+    else:
+        return get_daily_forecast_by_city(city_name, days)
 
 # === КНОПКИ ===
 def weather_buttons():
@@ -105,31 +169,38 @@ def start(message):
         reply_markup=weather_buttons()
     )
 
-# === ОБРАБОТКА ЛЮБЫХ СООБЩЕНИЙ (ручной ввод) ===
+# === ОБРАБОТКА РУЧНОГО ВВОДА ===
 @bot.message_handler(func=lambda message: True)
 def handle_weather_request(message):
     city = message.text.strip()
     
-    # Проверка на кнопки (если пользователь написал "Сегодня" и т.д.)
+    # Если это слова-команды кнопок — направляем на кнопки
     if city.lower() in ["сегодня", "завтра", "3 дня", "оба города"]:
         bot.reply_to(message, "Используй кнопки ниже 👇", reply_markup=weather_buttons())
         return
     
-    w = get_weather(city)
+    w = get_weather_for_city(city)
     if w:
         bot.reply_to(message, f"🌤️ *{city}* сейчас:\n{w}", parse_mode='Markdown')
     else:
-        bot.reply_to(message, f"❌ Не удалось получить погоду для '{city}'. Проверь название города (например, Минск, Гродно, Брест).")
+        bot.reply_to(message, f"❌ Не удалось получить погоду для '{city}'. Проверь название или попробуй другой город.")
 
 # === ОБРАБОТКА НАЖАТИЙ НА КНОПКИ ===
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    cities = {"Брест": "Brest", "Логойск": "Lahojsk,BY"}
+    # Для кнопок используем координаты для Логойска и название для Бреста
+    cities = {
+        "Брест": {"type": "name", "value": "Brest"},
+        "Логойск": {"type": "coords", "lat": 54.2035, "lon": 27.8520}
+    }
     
     if call.data == 'today':
         text = "🌤️ *Погода сегодня:*\n\n"
-        for name, eng in cities.items():
-            w = get_weather(eng)
+        for name, info in cities.items():
+            if info["type"] == "name":
+                w = get_weather_by_city(info["value"])
+            else:
+                w = get_weather_by_coords(info["lat"], info["lon"])
             if w:
                 text += f"*{name}:*\n{w}\n\n"
             else:
@@ -138,8 +209,11 @@ def callback_handler(call):
     
     elif call.data == 'tomorrow':
         text = "🌥️ *Погода завтра:*\n\n"
-        for name, eng in cities.items():
-            f = get_forecast(eng, 1)
+        for name, info in cities.items():
+            if info["type"] == "name":
+                f = get_forecast_by_city(info["value"], 1)
+            else:
+                f = get_forecast_by_coords(info["lat"], info["lon"], 1)
             if f:
                 text += f"*{name}:*\n{f}\n\n"
             else:
@@ -148,8 +222,11 @@ def callback_handler(call):
     
     elif call.data == '3days':
         text = "📅 *Прогноз на 3 дня:*\n\n"
-        for name, eng in cities.items():
-            f = get_daily_forecast(eng, 3)
+        for name, info in cities.items():
+            if info["type"] == "name":
+                f = get_daily_forecast_by_city(info["value"], 3)
+            else:
+                f = get_daily_forecast_by_coords(info["lat"], info["lon"], 3)
             if f:
                 text += f"*{name}:*\n{f}\n\n"
             else:
@@ -158,8 +235,11 @@ def callback_handler(call):
     
     elif call.data == 'both':
         text = "🌍 *Сводка по городам:*\n\n"
-        for name, eng in cities.items():
-            w = get_weather(eng)
+        for name, info in cities.items():
+            if info["type"] == "name":
+                w = get_weather_by_city(info["value"])
+            else:
+                w = get_weather_by_coords(info["lat"], info["lon"])
             if w:
                 text += f"*{name}* сейчас:\n{w}\n\n"
             else:
@@ -173,10 +253,16 @@ def morning_broadcast():
     while True:
         now = datetime.now()
         if now.hour == 6 and now.minute == 0:
-            cities = {"Брест": "Brest", "Логойск": "Lahojsk,BY"}
+            cities = {
+                "Брест": {"type": "name", "value": "Brest"},
+                "Логойск": {"type": "coords", "lat": 54.2035, "lon": 27.8520}
+            }
             text = "🌅 *Доброе утро!*\n\nПогода сегодня:\n\n"
-            for name, eng in cities.items():
-                w = get_weather(eng)
+            for name, info in cities.items():
+                if info["type"] == "name":
+                    w = get_weather_by_city(info["value"])
+                else:
+                    w = get_weather_by_coords(info["lat"], info["lon"])
                 if w:
                     text += f"*{name}:*\n{w}\n\n"
                 else:
