@@ -37,43 +37,35 @@ def main_keyboard():
     return keyboard
 
 # ============================================
-# ПАРСИНГ KUFAR (БЕЗ ФИЛЬТРА)
+# ПАРСИНГ KUFAR (УНИВЕРСАЛЬНЫЙ)
 # ============================================
 def parse_kufar():
     offers = []
-    url = "https://re.kufar.by/l/minsk/snyat/kvartiru?m=1"
-    headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X)"}
+    url = "https://re.kufar.by/l/minsk/snyat/kvartiru"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         r = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(r.text, 'html.parser')
-        items = soup.find_all('div', class_=lambda x: x and ('item' in x.lower() or 'card' in x.lower()))
-        print(f"  Kufar: найдено {len(items)} объявлений")
-        
-        for item in items:
-            try:
-                title_elem = item.find('a', class_=lambda x: x and ('title' in x.lower() or 'link' in x.lower()))
-                if not title_elem:
-                    continue
-                title = title_elem.text.strip()
-                link = title_elem.get('href')
-                if link and link.startswith('/'):
-                    link = "https://re.kufar.by" + link
-                
-                price_elem = item.find('span', class_=lambda x: x and 'price' in x.lower())
-                price = price_elem.text.strip() if price_elem else "Цена не указана"
-                
-                offer_text = f"🏠 {title[:50]}\n💰 {price}\n🔗 {link}"
-                offers.append(offer_text)
-                if len(offers) >= 15:
-                    break
-            except:
-                continue
+        # Ищем все ссылки, которые ведут на объявления
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            if '/l/minsk/snyat/kvartiru/' in href and 'page' not in href:
+                title = a.text.strip()
+                if len(title) > 5:
+                    # Пробуем найти цену рядом
+                    price_elem = a.find_next('span', class_=lambda x: x and 'price' in x.lower())
+                    price = price_elem.text.strip() if price_elem else "Цена не указана"
+                    link = "https://re.kufar.by" + href if href.startswith('/') else href
+                    offer_text = f"🏠 {title[:50]}\n💰 {price}\n🔗 {link}"
+                    offers.append(offer_text)
+                    if len(offers) >= 15:
+                        break
     except Exception as e:
         print(f"Ошибка Kufar: {e}")
     return offers
 
 # ============================================
-# ПАРСИНГ REALT (БЕЗ ФИЛЬТРА)
+# ПАРСИНГ REALT (оставляем как есть)
 # ============================================
 def parse_realt():
     offers = []
@@ -97,7 +89,7 @@ def parse_realt():
     return offers
 
 # ============================================
-# ПАРСИНГ DOMOVITA (БЕЗ ФИЛЬТРА)
+# ПАРСИНГ DOMOVITA
 # ============================================
 def parse_domovita():
     offers = []
@@ -121,7 +113,7 @@ def parse_domovita():
     return offers
 
 # ============================================
-# ПАРСИНГ NEAGENT (БЕЗ ФИЛЬТРА)
+# ПАРСИНГ NEAGENT
 # ============================================
 def parse_neagent():
     offers = []
@@ -145,7 +137,7 @@ def parse_neagent():
     return offers
 
 # ============================================
-# ПАРСИНГ HATA (БЕЗ ФИЛЬТРА)
+# ПАРСИНГ HATA
 # ============================================
 def parse_hata():
     offers = []
@@ -169,7 +161,7 @@ def parse_hata():
     return offers
 
 # ============================================
-# ПАРСИНГ GDE (БЕЗ ФИЛЬТРА)
+# ПАРСИНГ GDE
 # ============================================
 def parse_gde():
     offers = []
