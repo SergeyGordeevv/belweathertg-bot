@@ -20,6 +20,10 @@ app = Flask(__name__)
 
 # === ФУНКЦИИ ПОГОДЫ ===
 def get_weather(city):
+    # Если город "Логойск" — подставляем правильное латинское название
+    if city.lower() == "логойск":
+        city = "Lahojsk,BY"
+    
     url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -36,6 +40,9 @@ def get_weather(city):
         return None
 
 def get_forecast(city, days=1):
+    if city.lower() == "логойск":
+        city = "Lahojsk,BY"
+    
     url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -53,6 +60,9 @@ def get_forecast(city, days=1):
         return None
 
 def get_daily_forecast(city, days=3):
+    if city.lower() == "логойск":
+        city = "Lahojsk,BY"
+    
     url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -89,8 +99,8 @@ def start(message):
     bot.reply_to(
         message,
         "🌤️ *Погодный бот для семьи!*\n\n"
-        "Я покажу погоду в Бресте и Логойске.\n"
-        "Выбери действие ниже 👇",
+        "Просто напиши название города (например, *Минск*, *Гродно*, *Брест*)\n"
+        "Или нажми на кнопку ниже 👇",
         parse_mode='Markdown',
         reply_markup=weather_buttons()
     )
@@ -99,22 +109,21 @@ def start(message):
 @bot.message_handler(func=lambda message: True)
 def handle_weather_request(message):
     city = message.text.strip()
-    # Если пользователь написал "Логойск" — заменяем на правильное латинское название
-    if city.lower() == "логойск":
-        city = "Lahojsk,BY"
-    elif city.lower() == "брест":
-        city = "Brest"
+    
+    # Проверка на кнопки (если пользователь написал "Сегодня" и т.д.)
+    if city.lower() in ["сегодня", "завтра", "3 дня", "оба города"]:
+        bot.reply_to(message, "Используй кнопки ниже 👇", reply_markup=weather_buttons())
+        return
     
     w = get_weather(city)
     if w:
-        bot.reply_to(message, f"🌤️ *{message.text}* сейчас:\n{w}", parse_mode='Markdown')
+        bot.reply_to(message, f"🌤️ *{city}* сейчас:\n{w}", parse_mode='Markdown')
     else:
-        bot.reply_to(message, f"❌ Не удалось получить погоду для '{message.text}'. Проверь название.")
+        bot.reply_to(message, f"❌ Не удалось получить погоду для '{city}'. Проверь название города (например, Минск, Гродно, Брест).")
 
 # === ОБРАБОТКА НАЖАТИЙ НА КНОПКИ ===
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    # ИСПРАВЛЕНО: везде используем Lahojsk,BY
     cities = {"Брест": "Brest", "Логойск": "Lahojsk,BY"}
     
     if call.data == 'today':
