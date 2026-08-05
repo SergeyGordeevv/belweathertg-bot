@@ -18,13 +18,12 @@ if not WEATHER_API_KEY:
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# === Хранилище ID последнего сообщения бота (для удаления) ===
-last_bot_message_id = {}
-
 # === ФУНКЦИИ ПОГОДЫ ===
 def get_weather(city):
+    # Если город "Логойск" — подставляем правильное латинское название
     if city.lower() == "логойск":
         city = "Lahojsk,BY"
+    
     url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -43,6 +42,7 @@ def get_weather(city):
 def get_forecast(city, days=1):
     if city.lower() == "логойск":
         city = "Lahojsk,BY"
+    
     url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -62,6 +62,7 @@ def get_forecast(city, days=1):
 def get_daily_forecast(city, days=3):
     if city.lower() == "логойск":
         city = "Lahojsk,BY"
+    
     url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=ru"
     try:
         r = requests.get(url, timeout=10)
@@ -92,35 +93,24 @@ def weather_buttons():
     keyboard.add(btn1, btn2, btn3, btn4)
     return keyboard
 
-# === КОМАНДА /start С УДАЛЕНИЕМ СТАРОГО СООБЩЕНИЯ ===
+# === КОМАНДЫ ===
 @bot.message_handler(commands=['start'])
 def start(message):
-    chat_id = message.chat.id
-    
-    # Удаляем предыдущее сообщение бота (если есть)
-    if chat_id in last_bot_message_id:
-        try:
-            bot.delete_message(chat_id, last_bot_message_id[chat_id])
-        except:
-            pass  # если не удалось — не страшно
-    
-    # Отправляем новое сообщение с кнопками
-    sent = bot.reply_to(
+    bot.reply_to(
         message,
         "🌤️ *Погодный бот для семьи!*\n\n"
-        "Напиши название города (например, *Минск*, *Брест*, *Гродно*)\n"
-        "Затем выбери период на кнопках ниже 👇",
+        "Просто напиши название города (например, *Минск*, *Гродно*, *Брест*)\n"
+        "Или нажми на кнопку ниже 👇",
         parse_mode='Markdown',
         reply_markup=weather_buttons()
     )
-    # Сохраняем ID нового сообщения, чтобы удалить его в следующий раз
-    last_bot_message_id[chat_id] = sent.message_id
 
-# === ОБРАБОТКА ЛЮБЫХ СООБЩЕНИЙ ===
+# === ОБРАБОТКА ЛЮБЫХ СООБЩЕНИЙ (ручной ввод) ===
 @bot.message_handler(func=lambda message: True)
 def handle_weather_request(message):
     city = message.text.strip()
     
+    # Проверка на кнопки (если пользователь написал "Сегодня" и т.д.)
     if city.lower() in ["сегодня", "завтра", "3 дня", "оба города"]:
         bot.reply_to(message, "Используй кнопки ниже 👇", reply_markup=weather_buttons())
         return
