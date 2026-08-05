@@ -1,4 +1,11 @@
 __pycache__/
 *.pyc
-chats_data.json
+*.pyo
+*.pyd
+.Python
+*.db
+*.sqlite3
 .env
+venv/
+env/
+.venv/
